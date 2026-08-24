@@ -1,6 +1,7 @@
 import { getAccessToken, logout, refreshAccessToken } from "./auth";
+import { API_ROOT } from "./config";
 
-const BASE = "/api";
+const BASE = API_ROOT;
 
 let onSessionExpired = null;
 export function setSessionExpiredHandler(fn) {

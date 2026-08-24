@@ -1,3 +1,5 @@
+import { API_ROOT } from "./config";
+
 const ACCESS_KEY = "recoverai_access_token";
 const REFRESH_KEY = "recoverai_refresh_token";
 
@@ -24,7 +26,7 @@ export function logout() {
 }
 
 export async function login(username, password) {
-  const res = await fetch("/api/auth/token/", {
+  const res = await fetch(`${API_ROOT}/auth/token/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -44,7 +46,7 @@ export async function refreshAccessToken() {
   const refresh = getRefreshToken();
   if (!refresh) return null;
 
-  const res = await fetch("/api/auth/token/refresh/", {
+  const res = await fetch(`${API_ROOT}/auth/token/refresh/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh }),

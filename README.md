@@ -178,10 +178,28 @@ render.yaml        Render Blueprint: web (Daphne) + worker + beat + Postgres + R
 
 ## Deploying
 
-`render.yaml` defines the full Blueprint (web, worker, beat, Postgres, Redis) — push to
-a repo connected to Render and it spins up as one unit. Deploy `frontend/` separately on
-Vercel/Netlify and point `CORS_ALLOWED_ORIGINS` (backend) and the frontend's API/WS base
-URLs at each other. Set `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD` in Render's env vars
-and run `seed_dashboard_user` once against the deployed database (Render's is separate
-from your local one) before the login screen will accept anything.
+**Backend (Render)**: `render.yaml` defines the full Blueprint (web, worker, beat,
+Postgres, Redis) — push to a repo connected to Render and it spins up as one unit.
+Setting services up manually instead (three services pointed at the same repo,
+Root Directory `backend`) works too — see the Start/Build commands in `render.yaml`.
+Either way, set `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`/`RAZORPAY_KEY_ID`/
+`RAZORPAY_KEY_SECRET`/`SECRET_KEY` as env vars, and run `seed_dashboard_user` once
+against the deployed database (Render's is separate from your local one) before the
+login screen will accept anything.
+
+**Frontend (Vercel or Netlify), separately** — it's never deployed alongside the
+backend:
+
+1. Import this repo, set the project **Root Directory** to `frontend`.
+2. Set one build-time env var: `VITE_API_BASE_URL=https://<your-render-service>.onrender.com`
+   (no trailing slash). Without this, the built frontend falls back to relative
+   `/api` paths, which only work when frontend and backend share an origin — i.e.
+   only in local dev, never once they're on separate domains.
+3. Deploy. Note the resulting frontend URL (e.g. `https://your-app.vercel.app`).
+4. Back on the Render **web** service, add that frontend URL to two separate env
+   vars — both are required, they gate different things:
+   - `CORS_ALLOWED_ORIGINS=https://your-app.vercel.app` (gates plain HTTP/REST requests)
+   - `ALLOWED_HOSTS=.onrender.com,your-app.vercel.app` (gates the WebSocket handshake
+     — Channels' origin check reads this, not `CORS_ALLOWED_ORIGINS`; CORS covers HTTP
+     only, so REST can work while the WebSocket silently fails if this is missed)
 # Revenue-Recovery

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { getAccessToken } from "./auth";
+import { wsUrl } from "./config";
 
 const MAX_FEED = 120;
 
@@ -19,13 +20,12 @@ export function useRecoveryRoom() {
   useEffect(() => {
     refreshSummary();
 
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
     // The browser WebSocket API can't set an Authorization header, so the access
     // token travels as a query param — see recovery/auth_middleware.py. Grabbed once
     // at connect time; a token that expires mid-connection isn't refreshed (the
     // connection stays open regardless — see design.md's WS non-goals).
     const token = getAccessToken();
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/recovery/?token=${encodeURIComponent(token || "")}`);
+    const ws = new WebSocket(wsUrl(`/ws/recovery/?token=${encodeURIComponent(token || "")}`));
     wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);
