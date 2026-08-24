@@ -11,6 +11,11 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("SECRET_KEY", default="dev-secret-key-change-me")
 DEBUG = env.bool("DEBUG", default=True)
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+# Render sets this automatically on every service (its own public hostname) — add it
+# so a deploy works even if ALLOWED_HOSTS itself was never manually configured.
+_render_hostname = env("RENDER_EXTERNAL_HOSTNAME", default="")
+if _render_hostname and _render_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_hostname)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
