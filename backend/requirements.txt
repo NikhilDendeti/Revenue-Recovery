@@ -8,7 +8,7 @@ daphne==4.1.2
 celery[redis]==5.4.0
 django-celery-beat==2.7.0
 redis==5.2.1
-psycopg[binary]==3.2.3
+psycopg[binary]==3.2.10
 django-environ==0.11.2
 langgraph==0.2.60
 langchain-core==0.3.28
