@@ -1,0 +1,26 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+backend/.env
+backend/staticfiles/
+backend/celerybeat-schedule*
+backend/db.sqlite3
+backend/.celery/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code — commands/ and skills/ (incl. the OpenSpec integration) are shared and
+# tracked; only local/session-only state is ignored.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/*.log

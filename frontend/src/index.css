@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Source Serif 4", Georgia, serif;
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-paper: #10160f;
+  --color-paper-raised: #161d16;
+  --color-ink: #e7ece4;
+  --color-ink-soft: #a9b5a6;
+  --color-ink-faint: #6e7a6c;
+  --color-line: #2a342a;
+  --color-line-strong: #3b473a;
+
+  --color-accent: #4fc68a;
+  --color-accent-ink: #8cddb2;
+  --color-accent-soft: #4fc68a22;
+
+  --color-warn: #e0a94c;
+  --color-warn-soft: #e0a94c22;
+
+  --color-danger: #e17b72;
+  --color-danger-soft: #e17b7222;
+
+  --color-console: #0b120d;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 4px;
+}
+
+@keyframes tick-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-tick-in {
+  animation: tick-in 0.25s ease-out;
+}

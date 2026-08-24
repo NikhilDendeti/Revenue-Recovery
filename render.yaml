@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: recoverai-web
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && python manage.py migrate --noinput && daphne -b 0.0.0.0 -p $PORT config.asgi:application"
+    envVars: &shared-env
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: DATABASE_URL
+        fromDatabase: { name: recoverai-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: recoverai-redis, type: redis, property: connectionString }
+      - key: CELERY_BROKER_URL
+        fromService: { name: recoverai-redis, type: redis, property: connectionString }
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false # set to your deployed frontend origin(s), comma-separated
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: DASHBOARD_USERNAME
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false # required — run `python manage.py seed_dashboard_user` once after setting this
+
+  - type: worker
+    name: recoverai-worker
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && celery -A config worker -l info"
+    envVars: *shared-env
+
+  - type: worker
+    name: recoverai-beat
+    runtime: python
+    plan: starter
+    buildCommand: "pip install -r backend/requirements.txt"
+    # DatabaseScheduler, not the default file scheduler — see README for why this flag matters.
+    startCommand: "cd backend && celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    envVars: *shared-env
+
+  - type: redis
+    name: recoverai-redis
+    plan: starter
+    ipAllowList: []
+
+databases:
+  - name: recoverai-db
+    plan: starter

@@ -1,0 +1,83 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+context: |
+  Project: RecoverAI — an autonomous revenue-recovery agent for the Razorpay AI
+  Buildathon, Track 03. Detects revenue at risk across three flows (payment
+  degradation, subscription/mandate failure, B2B receivables), diagnoses root cause,
+  decides a bounded intervention, enforces deterministic guardrails, executes the
+  action, and logs every step to an append-only audit trail — watchable live on the
+  "Recovery Room" dashboard.
+
+  Backend: Django 5 + Django REST Framework + Django Channels (WebSocket, ASGI via
+  Daphne) + Celery + django-celery-beat, under backend/. PostgreSQL + Redis in
+  production; local dev needs neither installed — SQLite, a filesystem-based Celery
+  broker, and a DB-backed relay standing in for Channels' Redis layer are the
+  defaults (opt into real Postgres/Redis locally by setting DATABASE_URL/REDIS_URL).
+    - backend/config/       settings, ASGI/WSGI, Celery app, URL root
+    - backend/recovery/     models (incl. BroadcastEvent, the local-dev live-event
+                             relay), DRF views/serializers, Channels consumer,
+                             guardrails.py (deterministic — never an LLM call),
+                             razorpay_client.py, tasks.py, seed/replay commands
+    - backend/agents/       LangGraph Diagnosis -> Decision pipeline, with a
+                             documented rule-based heuristic fallback when no
+                             OPENAI_API_KEY/ANTHROPIC_API_KEY is set
+
+  Frontend: React + Vite + Tailwind CSS v4, under frontend/src/ — components/ (Login,
+  Dashboard, Recovery Ticker, Guardrail Console, Audit Trail, Chain drawer, Voice
+  moment), lib/ (REST client, JWT auth, WebSocket hook, formatters).
+
+  Key conventions:
+    - The audit log (AuditLogEntry) is append-only, enforced by a real database
+      trigger implemented per-backend (migration 0002 — both SQLite and PostgreSQL,
+      not Postgres-only), not just ORM-level guards — never propose a design that
+      updates or deletes an audit_log row.
+    - Guardrails are deterministic Python, never an LLM call — keep that separation
+      in any proposal touching recovery/guardrails.py.
+    - There is no Razorpay API to force-retry a failed payment or a halted
+      subscription. Every recovery action is a fresh payable artifact (Order
+      re-attempt, Payment Link, Registration Link, Invoice reminder) — see
+      recovery/razorpay_client.py and README.md's "what's real vs. simulated"
+      section before proposing anything that assumes a retry endpoint exists. Known
+      unfixed gap: seed_data's synthetic IDs 404 against a real retry_order/
+      invoice_reminder call when live Razorpay keys are configured.
+    - Delayed/cooldown actions are modeled as ScheduledAction rows swept by a
+      periodic Celery Beat task, never as raw multi-day Celery ETA tasks.
+    - Live dashboard events (ticker/guardrail/audit pushes) can't assume a
+      shared-memory channel layer — the Celery worker (publisher) and Daphne (the
+      WebSocket server) are separate processes. When Redis isn't configured,
+      recovery/ws.py and RecoveryConsumer route through a polled BroadcastEvent
+      table instead of a channel layer; a bare in-memory channel layer was tried
+      first and doesn't bridge processes.
+    - We follow the OpenSpec workflow for all planning (see CLAUDE.md) —
+      /opsx:propose before writing code, /opsx:apply to implement, /opsx:archive
+      when done.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
