@@ -8,6 +8,7 @@ backend/staticfiles/
 backend/celerybeat-schedule*
 backend/db.sqlite3
 backend/.celery/
+backend/control/
 
 # Node
 frontend/node_modules/
