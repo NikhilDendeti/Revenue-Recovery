@@ -53,8 +53,12 @@ Postgres/Redis locally. React + Vite + Tailwind CSS v4 on the frontend.
   Every recovery action is a *fresh* payable artifact (Order re-attempt, Payment Link,
   Registration Link, Invoice reminder) — see `backend/recovery/razorpay_client.py` and
   the README's "what's real vs. simulated" section before assuming a retry endpoint
-  exists. Known unfixed gap: `seed_data`'s synthetic IDs 404 against a real
-  `retry_order`/`invoice_reminder` call when live Razorpay keys are configured.
+  exists. `seed_data`'s synthetic IDs would 404 against a real
+  `retry_order`/`invoice_reminder` call when live Razorpay keys are configured; the
+  action layer handles this by falling back to a fresh Payment Link on a not-found
+  (404), and escalating (never wedging) on any other API error — see
+  `backend/recovery/tasks.py::_execute_action`, so a stale id no longer strands the
+  transaction in `PROCESSING`.
 - **Delayed/cooldown actions are `ScheduledAction` rows swept by a periodic Celery Beat
   task**, never raw multi-day Celery ETA tasks (those don't survive a worker restart).
 - **Live dashboard events don't assume a shared-memory channel layer.** The Celery

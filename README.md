@@ -158,11 +158,15 @@ render.yaml        Render Blueprint: web (Daphne) + worker + beat + Postgres + R
   (`recovery/razorpay_client.py`). There is no "retry a failed payment" endpoint —
   every action is a fresh payable artifact (Order re-attempt, Payment Link,
   Registration Link, Invoice reminder), matching what Razorpay's API actually exposes.
-  **Known gap**: `seed_data` generates synthetic `order_sim_...`/invoice IDs for
+  **Seeded-data note**: `seed_data` generates synthetic `order_sim_...`/invoice IDs for
   realism; with real keys configured, the `retry_order` and `invoice_reminder` action
-  paths call Razorpay with those fake IDs and 404, since they were never created on
-  Razorpay's side. Not yet fixed — seed real Orders/Invoices first, or run with keys
-  unset (simulated mode) for a reliable seeded-data demo.
+  paths would call Razorpay with those fake IDs and 404, since they were never created
+  on Razorpay's side. The action layer handles this: a not-found (404) on those paths
+  falls back to issuing a fresh Payment Link (`recovery/tasks.py::_execute_action`), so
+  seeded data recovers cleanly against live keys instead of wedging the transaction. Any
+  *other* API error (a transient 5xx/timeout) escalates the transaction to the human
+  queue with an `action_failed` audit entry, rather than crashing the task and stranding
+  it in `PROCESSING`.
 - **Outcome (recovered vs. failed)**: since a batch replay has no real customer clicking
   "pay," the outcome is resolved probabilistically, weighted by diagnosis confidence
   (`recovery/tasks.py::_execute_action`) — an honest, documented synthetic-data model,

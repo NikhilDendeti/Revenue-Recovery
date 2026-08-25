@@ -45,9 +45,12 @@ context: |
       subscription. Every recovery action is a fresh payable artifact (Order
       re-attempt, Payment Link, Registration Link, Invoice reminder) — see
       recovery/razorpay_client.py and README.md's "what's real vs. simulated"
-      section before proposing anything that assumes a retry endpoint exists. Known
-      unfixed gap: seed_data's synthetic IDs 404 against a real retry_order/
-      invoice_reminder call when live Razorpay keys are configured.
+      section before proposing anything that assumes a retry endpoint exists.
+      seed_data's synthetic IDs would 404 against a real retry_order/
+      invoice_reminder call when live Razorpay keys are configured; the action layer
+      (recovery/tasks.py::_execute_action) falls back to a fresh Payment Link on a
+      not-found (404) and escalates on any other API error, so a stale id no longer
+      wedges the transaction in PROCESSING.
     - Delayed/cooldown actions are modeled as ScheduledAction rows swept by a
       periodic Celery Beat task, never as raw multi-day Celery ETA tasks.
     - Live dashboard events (ticker/guardrail/audit pushes) can't assume a

@@ -19,7 +19,20 @@ from django.conf import settings
 
 
 class RazorpayError(Exception):
-    pass
+    """Carries the HTTP status alongside the message so callers can branch on it —
+    notably to tell a 404 (a stale/never-created id, recoverable by issuing a fresh
+    payable artifact) apart from a transient 5xx/timeout (escalate)."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def is_not_found(err: Exception) -> bool:
+    """True for a resource-not-found (404) RazorpayError. A 404 on retry_order/
+    invoice_reminder means the referenced order/invoice doesn't exist at Razorpay —
+    the action layer falls back to a fresh payment link rather than escalating."""
+    return getattr(err, "status_code", None) == 404
 
 
 def _configured() -> bool:
@@ -34,7 +47,7 @@ def _post(path: str, payload: dict) -> dict:
         timeout=15,
     )
     if resp.status_code >= 400:
-        raise RazorpayError(f"{path} -> {resp.status_code}: {resp.text}")
+        raise RazorpayError(f"{path} -> {resp.status_code}: {resp.text}", status_code=resp.status_code)
     return resp.json()
 
 

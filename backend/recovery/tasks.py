@@ -32,6 +32,11 @@ DECISION_TO_ACTION_CHANNEL = {
     Decision.Action.ESCALATE: Action.Type.ESCALATE,
 }
 
+# Actions whose Razorpay call targets a specific pre-existing artifact (an order to
+# re-open, an invoice to re-notify). If that artifact 404s — the seed_data gap, or any
+# stale id — we can recover by issuing a fresh payment link instead of escalating.
+_FALLBACK_ACTIONS = {Decision.Action.RETRY_ORDER, Decision.Action.INVOICE_REMINDER}
+
 
 def _audit(txn, event_type, actor, payload):
     entry = AuditLogEntry.objects.create(transaction=txn, event_type=event_type, actor=actor, payload=payload)
@@ -78,22 +83,83 @@ def _call_razorpay(txn, action_type) -> dict:
     return {"simulated": True, "note": "no Razorpay call for this action type"}
 
 
-def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
-    api_response = _call_razorpay(txn, action_type)
-    channel = DECISION_TO_ACTION_CHANNEL.get(action_type, Action.Type.ESCALATE)
+def _escalate(txn, *, reason, event_type, api_response) -> Action:
+    """Resolve a transaction to the human queue. The single place a transaction becomes
+    ESCALATED — reused by guardrail escalation, API-failure escalation, and the
+    unexpected-error safety net — so all three write an ESCALATE Action, an audit entry,
+    and an escalated ticker push consistently. event_type distinguishes why."""
+    action = Action.objects.create(
+        transaction=txn, action_type=Action.Type.ESCALATE, api_response=api_response, result=Action.Result.PENDING
+    )
+    txn.status = Transaction.Status.ESCALATED
+    txn.save(update_fields=["status", "updated_at"])
+    _audit(txn, event_type, AuditLogEntry.Actor.SYSTEM, {"reason": reason, "api_response": api_response})
+    _push_ticker(txn, "escalated", Action.Type.ESCALATE)
+    return action
 
+
+def _escalate_api_failure(txn, action_type, err) -> Action:
+    """A recovery action's Razorpay call failed unrecoverably (a transient/5xx error, or
+    a 404 on an action with no fallback). Escalate with a distinct 'action_failed' event
+    so the audit trail separates an API failure from a guardrail-driven escalation."""
+    return _escalate(
+        txn,
+        reason=f"action '{action_type}' failed at the payment provider: {err}",
+        event_type="action_failed",
+        api_response={"error": str(err), "status_code": getattr(err, "status_code", None), "failed_action": action_type},
+    )
+
+
+def _escalate_on_unexpected_error(txn, err) -> Action:
+    """Last-resort safety net for the pipeline tasks: any exception that isn't the
+    Razorpay-failure path above still resolves the transaction to ESCALATED rather than
+    leaving it stranded in PROCESSING (which the idempotency guard would then block from
+    ever reprocessing)."""
+    return _escalate(
+        txn,
+        reason=f"unexpected error during recovery execution: {err}",
+        event_type="pipeline_error",
+        api_response={"error": str(err), "error_type": type(err).__name__},
+    )
+
+
+def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
     if action_type == Decision.Action.ESCALATE:
-        action = Action.objects.create(
-            transaction=txn, action_type=Action.Type.ESCALATE, api_response=api_response, result=Action.Result.PENDING
+        # ESCALATE's _call_razorpay returns a static dict and never hits the network,
+        # so it can't raise — no guard needed here.
+        return _escalate(
+            txn,
+            reason="guardrail escalation or low-confidence decision",
+            event_type="escalated",
+            api_response=_call_razorpay(txn, action_type),
         )
-        txn.status = Transaction.Status.ESCALATED
-        txn.save(update_fields=["status", "updated_at"])
-        _audit(
-            txn, "escalated", AuditLogEntry.Actor.SYSTEM,
-            {"reason": "guardrail escalation or low-confidence decision", "api_response": api_response},
-        )
-        _push_ticker(txn, "escalated", channel)
-        return action
+
+    channel = DECISION_TO_ACTION_CHANNEL.get(action_type, Action.Type.ESCALATE)
+    fallback_note = None
+    try:
+        api_response = _call_razorpay(txn, action_type)
+    except razorpay_client.RazorpayError as err:
+        # A 404 on retry_order/invoice_reminder means the stored order/invoice id doesn't
+        # exist at Razorpay (the seed_data gap, or any stale id) — recover by issuing a
+        # fresh payment link. Any other API error has no safe fallback: escalate.
+        if razorpay_client.is_not_found(err) and action_type in _FALLBACK_ACTIONS:
+            try:
+                api_response = razorpay_client.create_payment_link(
+                    int(txn.amount * 100), f"RecoverAI recovery — {txn.id}", txn.customer_name, txn.customer_phone
+                )
+            except razorpay_client.RazorpayError as fallback_err:
+                return _escalate_api_failure(txn, action_type, fallback_err)
+            channel = Action.Type.EMAIL  # a payment link is a contact-channel artifact, not a same-order retry
+            fallback_note = {
+                "fallback_from": action_type,
+                "reason": "original payable artifact not found (404) — issued a fresh payment link instead",
+                "original_error": str(err),
+            }
+        else:
+            return _escalate_api_failure(txn, action_type, err)
+
+    if fallback_note is not None:
+        api_response = {**api_response, "_recoverai_fallback": fallback_note}
 
     # Synthetic outcome model: a payable artifact was created (order / link / invoice)
     # but nothing forces the customer to pay it — there's no real customer in a batch
@@ -135,6 +201,17 @@ def process_transaction_event(transaction_id):
         {"kind": txn.kind, "failure_code": txn.failure_code, "amount": float(txn.amount)},
     )
 
+    try:
+        _run_recovery_pipeline(txn)
+    except Exception as err:
+        # Safety net: an unexpected failure (not the Razorpay-failure path, which
+        # _execute_action already resolves) must never leave the transaction wedged in
+        # PROCESSING — the idempotency guard above would then block it forever.
+        logger.exception("process_transaction_event: pipeline failed for %s", txn.id)
+        _escalate_on_unexpected_error(txn, err)
+
+
+def _run_recovery_pipeline(txn):
     result = run_pipeline(
         {
             "kind": txn.kind,
@@ -231,7 +308,13 @@ def dispatch_scheduled_action(scheduled_action_id):
         txn, "scheduled_action_dispatched", AuditLogEntry.Actor.SYSTEM,
         {"reason": scheduled.reason, "action_type": scheduled.action_type},
     )
-    _execute_action(txn, scheduled.action_type, confidence)
+    try:
+        _execute_action(txn, scheduled.action_type, confidence)
+    except Exception as err:
+        # Same safety net as process_transaction_event: a delayed action that fails
+        # unexpectedly must resolve the transaction, not leave it mid-execution.
+        logger.exception("dispatch_scheduled_action: execution failed for %s", txn.id)
+        _escalate_on_unexpected_error(txn, err)
 
 
 @shared_task

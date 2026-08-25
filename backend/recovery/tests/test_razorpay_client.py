@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -10,6 +10,25 @@ pytestmark = pytest.mark.django_db
 
 def _fail_if_called(*args, **kwargs):
     raise AssertionError("requests.post was called in simulated mode — it must not hit the network")
+
+
+class TestErrorClassification:
+    """A RazorpayError carries the HTTP status so the action layer can tell a 404
+    (fall back to a fresh payment link) from a transient error (escalate)."""
+
+    def test_post_raises_with_status_code_on_404(self):
+        with patch.object(requests, "post", return_value=Mock(status_code=404, text="not found")):
+            with pytest.raises(rc.RazorpayError) as excinfo:
+                rc._post("/orders/order_missing", {})
+        assert excinfo.value.status_code == 404
+        assert rc.is_not_found(excinfo.value) is True
+
+    def test_is_not_found_false_for_non_404_error(self):
+        with patch.object(requests, "post", return_value=Mock(status_code=500, text="server error")):
+            with pytest.raises(rc.RazorpayError) as excinfo:
+                rc._post("/orders", {"amount": 100})
+        assert excinfo.value.status_code == 500
+        assert rc.is_not_found(excinfo.value) is False
 
 
 @pytest.mark.usefixtures("no_razorpay_keys")
