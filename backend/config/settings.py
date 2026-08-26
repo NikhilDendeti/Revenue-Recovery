@@ -212,3 +212,10 @@ GUARDRAILS = {
 
 # Demo pacing: seconds of stagger between each transaction during a batch replay.
 REPLAY_STAGGER_SECONDS = env.float("REPLAY_STAGGER_SECONDS", default=1.5)
+
+# Optional: make a batch replay's recovered/failed outcomes reproducible across runs.
+# The outcome of a replay is drawn against diagnosis confidence (there is no real customer
+# clicking "pay"), so it varies every run. Setting this seeds the draw per transaction, so
+# a rehearsal and the real thing produce the same board. Unset (the default) draws from the
+# system RNG and behaviour is exactly as before.
+RECOVERY_OUTCOME_SEED = env.str("RECOVERY_OUTCOME_SEED", default="") or None
