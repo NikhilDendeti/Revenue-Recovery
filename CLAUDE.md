@@ -26,9 +26,14 @@ backend/
                     Razorpay client, Celery tasks, seed/replay management commands
   agents/           the LangGraph Diagnosis -> Decision pipeline (+ heuristic fallback)
 frontend/
-  src/components/   Login, Dashboard, Recovery Ticker, Guardrail Console, Audit Trail,
-                    Chain drawer, Voice moment
-  src/lib/          REST client, auth (JWT), WebSocket hook, formatting helpers
+  src/index.css      the design system: Tailwind v4 @theme tokens + composite utilities
+  src/components/    Login, Dashboard, Header, MobileNav, Hero, Summary strip, Search +
+                     filters, Content row, Transaction card, Recovery Ticker, Guardrail
+                     Console, Audit Trail, Chain dialog, Voice moment, Error boundary
+  src/components/ui/ primitives: Button, Icon, Badge, Surface, Skeleton, EmptyState,
+                     Tooltip, Toast provider, Wordmark
+  src/lib/           REST client, auth (JWT), WebSocket hook, formatting + status
+                     descriptors, nav/section state, toast context
 openspec/           planning artifacts — see "Planning workflow" below
 render.yaml         Render Blueprint: web (Daphne) + worker + beat + Postgres + Redis
 ```

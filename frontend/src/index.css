@@ -1,56 +1,437 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   RecoverAI — Recovery Room design system
+   --------------------------------------------------------------------------
+   One token layer for the whole app. Components compose these; nothing below
+   src/components/ should introduce a raw hex, a one-off radius, or a bespoke
+   easing curve.
+
+   Two colour families, deliberately kept apart:
+     - `brand` (red) means INTENT — primary actions, active nav, live pulse,
+       focus rings, the logo mark. Never an outcome.
+     - `ok / danger / alert / warn / info / neutral` mean OUTCOME — a
+       transaction's state. Never a call to action.
+   Mixing them would make "click me" and "this lost money" the same colour,
+   and they appear side by side in the ticker.
+   ========================================================================== */
+
 @theme {
-  --font-serif: "Source Serif 4", Georgia, serif;
-  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  /* -- Type families ------------------------------------------------------ */
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  --color-paper: #10160f;
-  --color-paper-raised: #161d16;
-  --color-ink: #e7ece4;
-  --color-ink-soft: #a9b5a6;
-  --color-ink-faint: #6e7a6c;
-  --color-line: #2a342a;
-  --color-line-strong: #3b473a;
+  /* -- Elevation ramp (near-black -> charcoal) ---------------------------- */
+  --color-void: #08080a; /* page ground */
+  --color-surface: #101013; /* base panels */
+  --color-surface-2: #17171c; /* cards */
+  --color-surface-3: #1f1f26; /* elevated / hover */
+  --color-surface-4: #2a2a33; /* highest / pressed */
+  --color-console: #0b0b0e; /* guardrail console ledger */
+  --color-hairline: #26262e;
+  --color-hairline-strong: #3a3a46;
 
-  --color-accent: #4fc68a;
-  --color-accent-ink: #8cddb2;
-  --color-accent-soft: #4fc68a22;
+  /* -- Foreground ramp ----------------------------------------------------
+     Contrast against --color-surface: fg 16.9:1, fg-muted 8.8:1,
+     fg-subtle 5.6:1. `fg-faint` is 3.6:1 — DISABLED AND DECORATIVE ONLY,
+     never body copy. */
+  --color-fg: #f4f4f6;
+  --color-fg-muted: #b0b0ba;
+  --color-fg-subtle: #8a8a96;
+  --color-fg-faint: #6a6a76;
 
-  --color-warn: #e0a94c;
-  --color-warn-soft: #e0a94c22;
+  /* -- Brand: intent only ------------------------------------------------- */
+  --color-brand: #e2101d; /* white on this = 4.86:1 */
+  --color-brand-strong: #c50d18; /* filled-button hover; white on this = 6.10:1 */
+  --color-brand-hover: #ff2d3d; /* borders, rings, glows — NOT a fill behind white text (3.69:1) */
+  --color-brand-deep: #8a0a12;
+  --color-brand-ink: #ff6068; /* brand red that is legible as small text */
+  --color-brand-tint: #e2101d1f;
+  --color-brand-tint-strong: #e2101d33;
 
-  --color-danger: #e17b72;
-  --color-danger-soft: #e17b7222;
+  /* -- Outcome palette: every entry ships with an -ink (legible as text on
+        dark) and a -tint (fill). All -ink values clear AA on surface-3. --- */
+  --color-ok: #3fdd8f; /* recovered  */
+  --color-ok-ink: #6ff0b1;
+  --color-ok-tint: #3fdd8f1f;
 
-  --color-console: #0b120d;
-}
+  --color-danger: #ff5f6b; /* failed     */
+  --color-danger-ink: #ff8f97;
+  --color-danger-tint: #ff5f6b1f;
 
-body {
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-}
+  --color-alert: #ff9f45; /* escalated  */
+  --color-alert-ink: #ffbe7d;
+  --color-alert-tint: #ff9f451f;
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-line-strong);
-  border-radius: 4px;
-}
+  --color-warn: #f2c14e; /* held       */
+  --color-warn-ink: #f8d78a;
+  --color-warn-tint: #f2c14e1f;
 
-@keyframes tick-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
+  --color-info: #5ab0ff; /* processing */
+  --color-info-ink: #93cbff;
+  --color-info-tint: #5ab0ff1f;
+
+  --color-neutral: #8f8f9c; /* open       */
+  --color-neutral-ink: #b6b6c2;
+  --color-neutral-tint: #8f8f9c1f;
+
+  /* -- Type scale --------------------------------------------------------- */
+  --text-display: clamp(2.5rem, 7vw, 4.25rem);
+  --text-display--line-height: 0.96;
+  --text-display--letter-spacing: -0.035em;
+  --text-display--font-weight: 800;
+
+  --text-h1: clamp(1.625rem, 3.4vw, 2.5rem);
+  --text-h1--line-height: 1.1;
+  --text-h1--letter-spacing: -0.025em;
+  --text-h1--font-weight: 700;
+
+  --text-h2: clamp(1.1875rem, 1.8vw, 1.5rem);
+  --text-h2--line-height: 1.22;
+  --text-h2--letter-spacing: -0.018em;
+  --text-h2--font-weight: 700;
+
+  --text-h3: 1.0625rem;
+  --text-h3--line-height: 1.35;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h3--font-weight: 600;
+
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.6;
+
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.5;
+
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.14em;
+  --text-caption--font-weight: 600;
+
+  /* -- Radii -------------------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+
+  /* -- Elevation ---------------------------------------------------------- */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -14px rgb(0 0 0 / 0.75);
+  --shadow-lift: 0 20px 44px -14px rgb(0 0 0 / 0.85), 0 2px 8px rgb(0 0 0 / 0.5);
+  --shadow-modal: 0 40px 90px -24px rgb(0 0 0 / 0.9);
+  --shadow-glow: 0 0 0 1px rgb(226 16 29 / 0.4), 0 10px 34px -8px rgb(226 16 29 / 0.4);
+
+  /* -- Motion ------------------------------------------------------------- */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-tick-in: tick-in 0.32s var(--ease-out-expo) both;
+  --animate-fade-up: fade-up 0.4s var(--ease-out-expo) both;
+  --animate-fade-in: fade-in 0.25s var(--ease-standard) both;
+  --animate-scale-in: scale-in 0.2s var(--ease-out-expo) both;
+  --animate-slide-in-right: slide-in-right 0.32s var(--ease-out-expo) both;
+  --animate-slide-up-sheet: slide-up-sheet 0.32s var(--ease-out-expo) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-live-pulse: live-pulse 2s var(--ease-standard) infinite;
+  --animate-ring-pulse: ring-pulse 2s var(--ease-standard) infinite;
+  --animate-wave: wave 1.1s var(--ease-standard) infinite;
+
+  @keyframes tick-in {
+    from {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(28px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes slide-up-sheet {
+    from {
+      opacity: 0;
+      transform: translateY(32px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -180% 0;
+    }
+    to {
+      background-position: 180% 0;
+    }
+  }
+  @keyframes live-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @keyframes ring-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgb(226 16 29 / 0.55);
+    }
+    70% {
+      box-shadow: 0 0 0 7px rgb(226 16 29 / 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgb(226 16 29 / 0);
+    }
+  }
+  @keyframes wave {
+    0%,
+    100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
+    }
   }
 }
-.animate-tick-in {
-  animation: tick-in 0.25s ease-out;
+
+/* ==========================================================================
+   Base
+   --------------------------------------------------------------------------
+   These MUST live in @layer base. Tailwind emits @utility output into the
+   utilities layer, and unlayered CSS beats layered CSS in the cascade
+   regardless of specificity or order — so an unlayered `* { scrollbar-width:
+   thin }` here would silently defeat `.no-scrollbar` on every carousel.
+   ========================================================================== */
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-void);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Anchored sections must clear the fixed header when navigated to. */
+  [data-section] {
+    scroll-margin-top: 5.5rem;
+  }
+
+  ::selection {
+    background: var(--color-brand-tint-strong);
+    color: var(--color-fg);
+  }
+
+  /* A single, always-visible focus treatment. Components never remove it. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-hover);
+    outline-offset: 2px;
+  }
+
+  /* Keep browser-autofilled inputs on the dark theme instead of the UA's
+     light-blue override. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-fg);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-surface-2) inset;
+    caret-color: var(--color-fg);
+    border-radius: inherit;
+    /* The UA repaints the autofill background on transition end; an absurd
+       delay is the standard way to keep it from ever landing. */
+    transition: background-color 100000s ease-in-out 0s;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-hairline-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-fg-faint) 70%, transparent);
+    background-clip: content-box;
+  }
+  * {
+    scrollbar-color: var(--color-hairline-strong) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+/* ==========================================================================
+   Composite utilities
+   ========================================================================== */
+
+/* Cinematic ground: layered radial washes + a fine grain, all CSS — no image
+   requests, so it works offline and costs nothing on first paint. */
+@utility cine-bg {
+  background-color: var(--color-void);
+  background-image:
+    radial-gradient(120% 85% at 12% -10%, rgb(226 16 29 / 0.2) 0%, transparent 55%),
+    radial-gradient(90% 70% at 92% 0%, rgb(90 40 120 / 0.16) 0%, transparent 60%),
+    radial-gradient(70% 60% at 50% 110%, rgb(226 16 29 / 0.08) 0%, transparent 65%);
+}
+
+@utility grain {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+/* Readability scrim over any cinematic background. */
+@utility scrim-b {
+  background-image: linear-gradient(
+    to top,
+    var(--color-void) 0%,
+    color-mix(in srgb, var(--color-void) 92%, transparent) 24%,
+    color-mix(in srgb, var(--color-void) 55%, transparent) 58%,
+    transparent 100%
+  );
+}
+
+@utility scrim-l {
+  background-image: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--color-void) 96%, transparent) 0%,
+    color-mix(in srgb, var(--color-void) 70%, transparent) 45%,
+    transparent 100%
+  );
+}
+
+@utility glass {
+  background-color: color-mix(in srgb, var(--color-surface-2) 78%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Carousel edge fade — masks the row's own overflow, not the page's. */
+@utility fade-x {
+  mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Skeleton sheen. */
+@utility shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-fg) 7%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 180% 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Bottom-nav clearance, safe-area aware. */
+@utility pb-safe-nav {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Clamp panel heights to the viewport instead of a fixed pixel height, so a
+   short laptop doesn't get a second page scroll and a phone isn't dominated
+   by one feed. */
+@utility h-panel {
+  height: clamp(22rem, 52vh, 34rem);
+}
+
+@utility line-clamp-2-safe {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   Reduced motion — one global opt-out, honoured by every animation above.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
