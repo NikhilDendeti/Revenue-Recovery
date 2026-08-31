@@ -5,14 +5,15 @@ Guidance for Claude Code (and any other agent) working in this repository.
 ## Project
 
 **RecoverAI** — an autonomous revenue-recovery agent built for the Razorpay AI
-Buildathon, Track 03 ("AI Revenue Recovery"). It detects revenue at risk across three
+Buildathon, Track 03 ("AI Revenue Recovery"). It detects revenue at risk across four
 flows, diagnoses the root cause, decides a bounded intervention, enforces deterministic
 guardrails, executes the action, and logs every step to an append-only audit trail —
 watchable live on the **Recovery Room** dashboard (a real-time ticker, a guardrail
-console, and a click-through reasoning-chain viewer).
+console, a promise-to-pay tracker, and a click-through reasoning-chain viewer).
 
-In-scope flows: payment degradation → recovery, failed subscription/mandate retry, and
-a B2B receivables chaser. All three share one pipeline: **detect → diagnose → decide →
+In-scope flows: payment degradation → recovery, failed subscription/mandate retry, a B2B
+receivables chaser, and checkout drop-off (an abandoned Razorpay Checkout with no
+failure code to key off). All four share one pipeline: **detect → diagnose → decide →
 act (bounded) → track outcome → audit.**
 
 Full setup/run instructions: [README.md](README.md).
@@ -22,21 +23,34 @@ Full setup/run instructions: [README.md](README.md).
 ```
 backend/
   config/          Django settings, ASGI/WSGI, Celery app, URL root
-  recovery/         models, DRF views/serializers, Channels consumer, guardrails,
-                    Razorpay client, Celery tasks, seed/replay management commands
-  agents/           the LangGraph Diagnosis -> Decision pipeline (+ heuristic fallback)
+  recovery/        models, DRF views/serializers, Channels consumer, guardrails,
+                   Razorpay client, Celery tasks, seed/replay management commands —
+                   see the layering note below before adding business logic here
+  agents/          the LangGraph Diagnosis -> Decision pipeline (+ heuristic fallback)
 frontend/
   src/index.css      the design system: Tailwind v4 @theme tokens + composite utilities
   src/components/    Login, Dashboard, Header, MobileNav, Hero, Summary strip, Search +
                      filters, Content row, Transaction card, Recovery Ticker, Guardrail
-                     Console, Audit Trail, Chain dialog, Voice moment, Error boundary
+                     Console, Promise Tracker, Audit Trail, Chain dialog, Voice moment,
+                     Error boundary
   src/components/ui/ primitives: Button, Icon, Badge, Surface, Skeleton, EmptyState,
                      Tooltip, Toast provider, Wordmark
-  src/lib/           REST client, auth (JWT), WebSocket hook, formatting + status
-                     descriptors, nav/section state, toast context
+  src/lib/           REST client + API base URL config, auth (JWT), WebSocket hook,
+                     formatting + status descriptors, nav/section state, toast context,
+                     promise-to-pay summary
 openspec/           planning artifacts — see "Planning workflow" below
 render.yaml         Render Blueprint: web (Daphne) + worker + beat + Postgres + Redis
 ```
+
+**Backend layering, mid-flight**: `backend/recovery` is partway through a migration to a
+views/presenters/storages/interactors layering, applied only to write-path code (a Celery
+task, a business branch, an external call) — see
+`openspec/changes/refactor-clean-architecture-layering`. If you find `recovery/interfaces/`,
+`recovery/adapters/`, `recovery/interactors/`, `recovery/storages/`, or
+`recovery/presenters/` only partly filled in, or `guardrails.py`/`tasks.py` still holding
+logic that change's placement rule says belongs in an interactor, that is this change in
+progress, not undocumented drift. Read it before adding new business logic straight into
+`tasks.py` or `guardrails.py`; its own last task updates this section once it lands.
 
 **Stack**: Django 5 + DRF + Django Channels + Celery + django-celery-beat on the
 backend, PostgreSQL + Redis in production. **Local dev needs neither installed** —

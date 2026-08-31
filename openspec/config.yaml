@@ -10,10 +10,11 @@ schema: spec-driven
 #     Domain: e-commerce platform
 context: |
   Project: RecoverAI — an autonomous revenue-recovery agent for the Razorpay AI
-  Buildathon, Track 03. Detects revenue at risk across three flows (payment
-  degradation, subscription/mandate failure, B2B receivables), diagnoses root cause,
-  decides a bounded intervention, enforces deterministic guardrails, executes the
-  action, and logs every step to an append-only audit trail — watchable live on the
+  Buildathon, Track 03. Detects revenue at risk across four flows (payment
+  degradation, subscription/mandate failure, B2B receivables, checkout drop-off),
+  diagnoses root cause, decides a bounded intervention, enforces deterministic
+  guardrails, executes the action, tracks the outcome through to a kept or broken
+  promise, and logs every step to an append-only audit trail — watchable live on the
   "Recovery Room" dashboard.
 
   Backend: Django 5 + Django REST Framework + Django Channels (WebSocket, ASGI via
@@ -25,14 +26,25 @@ context: |
     - backend/recovery/     models (incl. BroadcastEvent, the local-dev live-event
                              relay), DRF views/serializers, Channels consumer,
                              guardrails.py (deterministic — never an LLM call),
-                             razorpay_client.py, tasks.py, seed/replay commands
+                             razorpay_client.py, tasks.py, seed/replay commands.
+                             Mid-migration to a layered interactor/storage/presenter/
+                             adapter structure for the write path (see
+                             openspec/changes/refactor-clean-architecture-layering) —
+                             a partially-filled recovery/interfaces|adapters|
+                             interactors|storages|presenters/ is that change in
+                             progress, not drift; read it before proposing new
+                             business logic straight into tasks.py or guardrails.py.
     - backend/agents/       LangGraph Diagnosis -> Decision pipeline, with a
                              documented rule-based heuristic fallback when no
                              OPENAI_API_KEY/ANTHROPIC_API_KEY is set
 
   Frontend: React + Vite + Tailwind CSS v4, under frontend/src/ — components/ (Login,
-  Dashboard, Recovery Ticker, Guardrail Console, Audit Trail, Chain drawer, Voice
-  moment), lib/ (REST client, JWT auth, WebSocket hook, formatters).
+  Dashboard, Header, MobileNav, Hero, Summary strip, Search + filters, Content row,
+  Transaction card, Recovery Ticker, Guardrail Console, Promise Tracker, Audit Trail,
+  Chain drawer, Voice moment, Error boundary), components/ui/ (Button, Icon, Badge,
+  Surface, Skeleton, EmptyState, Tooltip, Toast provider, Wordmark), lib/ (REST
+  client + API base URL config, JWT auth, WebSocket hook, formatters, nav/section
+  state, toast context, promise-to-pay summary).
 
   Key conventions:
     - The audit log (AuditLogEntry) is append-only, enforced by a real database
@@ -52,7 +64,11 @@ context: |
       not-found (404) and escalates on any other API error, so a stale id no longer
       wedges the transaction in PROCESSING.
     - Delayed/cooldown actions are modeled as ScheduledAction rows swept by a
-      periodic Celery Beat task, never as raw multi-day Celery ETA tasks.
+      periodic Celery Beat task, never as raw multi-day Celery ETA tasks. A
+      subscription_failure transaction's mandate-recovery cadence (nudge ->
+      different-channel follow-up -> escalate) is modeled the same way: a
+      MandateSequence row tracks progress, and each step is chained as another
+      ScheduledAction rather than a separate scheduler.
     - Live dashboard events (ticker/guardrail/audit pushes) can't assume a
       shared-memory channel layer — the Celery worker (publisher) and Daphne (the
       WebSocket server) are separate processes. When Redis isn't configured,

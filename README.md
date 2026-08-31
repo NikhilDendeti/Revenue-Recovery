@@ -1,14 +1,11 @@
 # RecoverAI
 
 Autonomous revenue-recovery agent for the Razorpay AI Buildathon, Track 03. Detects
-revenue at risk across three flows (payment degradation, subscription/mandate failure,
-B2B receivables), diagnoses the root cause, decides a bounded intervention, enforces six
-deterministic guardrails, executes the action, and logs every step to an append-only
+revenue at risk across four flows — payment degradation, subscription/mandate failure,
+B2B receivables, and abandoned checkout — diagnoses the root cause, decides a bounded
+intervention, enforces six deterministic guardrails, executes the action, tracks the
+outcome through to a kept or broken promise, and logs every step to an append-only
 audit trail — all watchable live on the **Recovery Room** dashboard.
-
-The full architecture writeup, 14-day schedule, and Razorpay API reality-check this
-build is written against were worked out first as a build plan — ask for that link if
-you don't have it handy.
 
 ## Stack
 
@@ -47,7 +44,7 @@ cp .env.example .env
 # run without one
 python manage.py migrate               # creates backend/db.sqlite3
 python manage.py seed_dashboard_user   # creates the one operator login the dashboard requires
-python manage.py seed_data             # 50+ synthetic records across the 3 flows
+python manage.py seed_data             # 68 synthetic records across all four flows
 python manage.py createsuperuser       # optional, for /admin/
 
 # 2. Run three backend processes (separate terminals)
@@ -92,7 +89,8 @@ Open `http://localhost:5173`, log in with `DASHBOARD_USERNAME`/`DASHBOARD_PASSWO
 click **Trigger batch replay**, and watch the Recovery Ticker climb, the Guardrail
 Console fire, and the Audit Trail populate live. Click any transaction row for its full
 reasoning chain; a high-value overdue receivable (>₹40,000) gets a **🔊 trigger voice
-showcase** button for the Hinglish voice moment.
+showcase** button for the Hinglish voice moment — its promise-to-pay date lands in the
+Promise Tracker, followed through to kept or broken.
 
 ### Quick smoke test without Celery
 
@@ -105,12 +103,14 @@ python manage.py replay_batch --sync   # runs the whole pipeline in-process, no 
 
 ```bash
 cd backend
-pytest            # 111 tests: guardrails, the diagnosis/decision heuristic, the audit
-                   # log's append-only DB trigger, the REST API, JWT auth (REST + WS),
-                   # the WebSocket push path, and the Celery task pipeline. Heuristic-path
-                   # tests force the LLM call off (agents.pipeline.complete_json patched to
-                   # None) so they're deterministic regardless of whether OPENAI_API_KEY is
-                   # set in .env; a handful of exact-heuristic-output tests use the
+pytest            # 186 tests: guardrails, the diagnosis/decision heuristic across all
+                   # four flows, mandate-recovery sequencing, promise-to-pay tracking,
+                   # the audit log's append-only DB trigger, the REST API, JWT auth
+                   # (REST + WS), the WebSocket push path, the Celery task pipeline, and
+                   # the backend's layer-boundary rules. Heuristic-path tests force the
+                   # LLM call off (agents.pipeline.complete_json patched to None) so
+                   # they're deterministic regardless of whether OPENAI_API_KEY is set in
+                   # .env; a handful of exact-heuristic-output tests use the
                    # `heuristic_only` fixture instead and skip cleanly when a real key is
                    # configured.
 ```
@@ -135,7 +135,11 @@ touches the network.
 backend/
   config/          settings, ASGI/WSGI, Celery app, URL root
   recovery/        models, DRF views/serializers, Channels consumer, guardrails,
-                   Razorpay client, Celery tasks, seed/replay management commands
+                   Razorpay client, Celery tasks, seed/replay management commands.
+                   Mid-migration to a layered interactor/storage/presenter/adapter
+                   structure for the write path — see openspec/changes/ if you find
+                   recovery/interfaces|adapters|interactors|storages|presenters/
+                   only partly filled in; that's this refactor in progress, not drift.
   recovery/auth_middleware.py   Channels JWT auth middleware (WS)
   recovery/tests/  pytest suite for everything above
   agents/          the LangGraph Diagnosis -> Decision pipeline (+ heuristic fallback)
@@ -147,12 +151,13 @@ frontend/
                       draws from here; no component defines its own palette.
   src/components/     Login, Dashboard, Header, MobileNav, Hero, Summary strip,
                       Search + filters, Content row (carousel), Transaction card,
-                      Recovery Ticker, Guardrail Console, Audit Trail, Chain dialog,
-                      Voice moment, Error boundary
+                      Recovery Ticker, Guardrail Console, Promise Tracker, Audit Trail,
+                      Chain dialog, Voice moment, Error boundary
   src/components/ui/  primitives — Button, Icon, Badge, Surface (Panel/Card), Skeleton,
                       EmptyState, Tooltip, Toast provider, Wordmark
-  src/lib/            REST client, auth (JWT), WebSocket hook, formatting + status
-                      descriptors, section/nav state, toast context
+  src/lib/            REST client + API base URL config, auth (JWT), WebSocket hook,
+                      formatting + status descriptors, section/nav state, toast context,
+                      promise-to-pay summary
 render.yaml        Render Blueprint: web (Daphne) + worker + beat + Postgres + Redis
 ```
 
@@ -161,6 +166,12 @@ render.yaml        Render Blueprint: web (Daphne) + worker + beat + Postgres + R
 - **Diagnosis/Decision**: a real LangGraph state machine. Reasoning is LLM-generated if
   an API key is set, otherwise a documented rule-based heuristic (`agents/pipeline.py`)
   — deliberately deterministic so the batch is reproducible during rehearsal.
+- **Checkout drop-off detection**: unlike the other three flows, an abandoned checkout
+  never produces a `failure_code` — nothing failed, it just never finished. Diagnosis
+  instead keys off time-since-initiated, cart value, and last payment method
+  (`agents/pipeline.py`). Razorpay has no "checkout abandoned" webhook; `seed_data` and
+  the batch simulator model this ingestion path the same synthetic way they model the
+  other three kinds.
 - **Guardrails**: fully real, deterministic Python (`recovery/guardrails.py`) — never an
   LLM call. All six rules from the BRD are implemented and independently testable.
 - **Audit log**: a real database-level `BEFORE UPDATE OR DELETE` trigger (migration
@@ -188,6 +199,11 @@ render.yaml        Render Blueprint: web (Daphne) + worker + beat + Postgres + R
 - **Voice moment**: a simulated transcript + response, logged as a promise-to-pay. Swap
   in a real TTS/STT provider behind `recovery/tasks.py::trigger_voice_showcase` when
   ready — it's a 2-minute demo insert by design, not core infra.
+- **Promise-to-pay resolution**: a promise created by the voice moment is swept
+  periodically (`sweep_promises_to_pay`) once its promised date passes — kept if the
+  transaction has recovered by then, otherwise broken. A broken promise routes back
+  through the guardrail layer as an escalation, not a fresh nudge, so a customer who
+  ghosts a commitment isn't just re-contacted by the same channel.
 - **Auth**: fully real JWT (`djangorestframework-simplejwt`) on every REST endpoint and
   the WebSocket feed, backed by one seeded operator account — sized for a single-tenant
   dashboard, not a multi-user product. The Razorpay webhook endpoint is deliberately
@@ -220,4 +236,3 @@ backend:
    - `ALLOWED_HOSTS=.onrender.com,your-app.vercel.app` (gates the WebSocket handshake
      — Channels' origin check reads this, not `CORS_ALLOWED_ORIGINS`; CORS covers HTTP
      only, so REST can work while the WebSocket silently fails if this is missed)
-# Revenue-Recovery
