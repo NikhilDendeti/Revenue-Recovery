@@ -17,8 +17,6 @@ import pytest
 RECOVERY = Path(__file__).resolve().parent.parent
 BACKEND = RECOVERY.parent
 
-# Nothing in a use case may reach the framework, the queue, the socket, the network, a
-# global RNG, or — invariant #2, made mechanical — the agent/LLM packages.
 BANNED_TOP_LEVEL = {
     "django", "rest_framework", "celery", "channels", "requests",
     "random", "agents", "langgraph",
@@ -48,7 +46,6 @@ def _imported_top_level_modules(path: Path):
             for alias in node.names:
                 found.add(alias.name.split(".")[0])
         elif isinstance(node, ast.ImportFrom):
-            # level > 0 is a relative import — always in-app, never banned.
             if node.level == 0 and node.module:
                 found.add(node.module.split(".")[0])
     return found
@@ -68,18 +65,10 @@ def test_pure_layers_import_nothing_impure(target):
     )
 
 
-# Only the storage layer may reach the audit model. Everything else goes through
-# StorageInterface.append_audit, which has no vocabulary for update or delete.
-#
-# This set SHRINKS as the refactor lands: `tasks.py` drops out once Phase 5 moves the
-# last direct write into the storage. Narrow it then — do not widen it.
 AUDIT_MODEL_ALLOWED = {
     "recovery/tasks.py",
     "recovery/storages/recovery_storage.py",
 }
-# models.py defines it; migrations/admin/serializers/views are framework wiring that
-# reads it; tests assert on it; seed_data is fixture tooling, not a use case (it has to
-# know about the PROTECT foreign key to explain why --flush can't delete everything).
 AUDIT_MODEL_EXEMPT_PATHS = (
     "models.py", "migrations/", "admin.py", "serializers.py", "tests/", "views.py",
     "management/commands/",

@@ -35,12 +35,6 @@ WEBHOOK_KIND_MAP = {
     "subscription.pending": Transaction.Kind.SUBSCRIPTION_FAILURE,
     "subscription.halted": Transaction.Kind.SUBSCRIPTION_FAILURE,
     "invoice.expired": Transaction.Kind.RECEIVABLE,
-    # NOT a real Razorpay webhook event — Razorpay does not emit a checkout-abandonment
-    # notification. This exists purely so the same simulated-webhook ingestion path the
-    # other three kinds already use (the batch simulator, this endpoint) can also create
-    # checkout_dropoff transactions. The at-risk window (settings.CHECKOUT_DROPOFF_AT_RISK_HOURS)
-    # is the producing system's responsibility to enforce before firing this event — it is
-    # not re-validated here, matching how e.g. "invoice.expired" is trusted as already-expired.
     "checkout.abandoned": Transaction.Kind.CHECKOUT_DROPOFF,
 }
 
@@ -149,9 +143,6 @@ class WebhookView(APIView):
         if kind is None:
             return Response({"error": f"unrecognized event '{event}'"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # checkout_dropoff-only signals: an ISO datetime string (or absent -> None) and a
-        # free-text payment method (or absent -> ""). Harmless no-ops for the other three
-        # kinds, which never populate them.
         checkout_initiated_at = None
         raw_checkout_initiated_at = payload.get("checkout_initiated_at")
         if raw_checkout_initiated_at:

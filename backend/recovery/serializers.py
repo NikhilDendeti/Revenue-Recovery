@@ -99,10 +99,5 @@ class TransactionChainSerializer(serializers.ModelSerializer):
         ]
 
     def get_mandate_sequence(self, obj):
-        # A subscription_failure transaction that was never sequenced (never
-        # decided registration_link, or escalated immediately) has no related
-        # MandateSequence row — getattr's default safely covers the reverse
-        # OneToOneField's DoesNotExist rather than a nested serializer silently
-        # omitting the key (spec: state "no active sequence" explicitly).
         sequence = getattr(obj, "mandate_sequence", None)
         return MandateSequenceSerializer(sequence).data if sequence is not None else None

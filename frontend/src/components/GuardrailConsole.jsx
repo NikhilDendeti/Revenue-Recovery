@@ -4,14 +4,6 @@ import EmptyState from "./ui/EmptyState";
 import Tooltip from "./ui/Tooltip";
 import { RULE_HELP, guardrailResultMeta, ruleLabel, tone } from "../lib/format";
 
-/* Panel 2 — the guardrail ledger.
- *
- * Deliberately still reads like a console: this is deterministic Python
- * enforcing compliance, and it should look like a machine's own record rather
- * than a styled feed. Blocked entries carry a glyph and a BLOCKED tag, so the
- * distinction survives without colour.
- */
-
 export default function GuardrailConsole({ events, onSelect }) {
   const blocked = events.filter((e) => e.rule_result === "blocked").length;
 

@@ -3,14 +3,6 @@ import { ToastContext } from "../../lib/toastContext";
 import { tone } from "../../lib/format";
 import Icon from "./Icon";
 
-/* Toasts.
- *
- * The app's one channel for "this happened" and "this failed" — the surfaces
- * that used to swallow rejections with `.catch(() => {})` route here instead.
- * Toasts announce politely, auto-dismiss, pause while hovered or focused, and
- * never steal focus.
- */
-
 const TONE_ICON = { ok: "check", danger: "alert", alert: "alert", warn: "alert", info: "info", brand: "sparkle" };
 
 function ToastItem({ toast, onDismiss, onPause, onResume }) {
@@ -83,7 +75,6 @@ export default function ToastProvider({ children }) {
     [schedule]
   );
 
-  // Clear every pending timer if the provider unmounts.
   useEffect(() => {
     const pending = timers.current;
     return () => {

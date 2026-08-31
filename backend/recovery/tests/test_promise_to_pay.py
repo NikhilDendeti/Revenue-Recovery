@@ -16,9 +16,6 @@ from recovery.tasks import sweep_promises_to_pay
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("no_razorpay_keys")]
 
 
-# --- 1. Model ---
-
-
 def test_promise_to_pay_records_its_defining_fields(make_transaction):
     txn = make_transaction(amount=1500)
     promise = PromiseToPay.objects.create(
@@ -46,9 +43,6 @@ def test_second_pending_promise_for_same_transaction_is_rejected(make_transactio
                 source=PromiseToPay.Source.VOICE,
             )
     assert PromiseToPay.objects.filter(transaction=txn).count() == 1
-
-
-# --- 2. Sweep task ---
 
 
 def test_sweep_marks_promise_kept_on_recovered_transaction(make_transaction):
@@ -79,7 +73,6 @@ def test_sweep_marks_promise_broken_and_runs_guardrails_on_unresolved_transactio
     promise.refresh_from_db()
     assert promise.status == PromiseToPay.Status.BROKEN
     assert AuditLogEntry.objects.filter(transaction=txn, event_type="promise_broken").exists()
-    # Guardrail evaluation ran as a direct result of the broken promise.
     txn.refresh_from_db()
     assert txn.status == Transaction.Status.ESCALATED
     assert Action.objects.filter(transaction=txn, action_type=Action.Type.ESCALATE).exists()
@@ -122,7 +115,6 @@ def test_sweep_on_already_escalated_transaction_does_not_double_escalate(make_tr
 
     promise.refresh_from_db()
     assert promise.status == PromiseToPay.Status.BROKEN
-    # Still exactly the one ESCALATE action from before the sweep — no redundant re-run.
     assert Action.objects.filter(transaction=txn, action_type=Action.Type.ESCALATE).count() == 1
 
 
@@ -137,9 +129,6 @@ def test_sweep_ignores_promises_not_yet_due(make_transaction):
 
     promise.refresh_from_db()
     assert promise.status == PromiseToPay.Status.PENDING
-
-
-# --- 3. Batch summary: promise_kept_rate ---
 
 
 def test_promise_kept_rate_reflects_resolved_promises(make_transaction):
@@ -163,7 +152,6 @@ def test_promise_kept_rate_reflects_resolved_promises(make_transaction):
 
     summary = compute_summary()
 
-    # 2 kept / (2 kept + 1 broken) = 66.7% — the still-pending promise doesn't count.
     assert summary["promise_kept_rate"] == pytest.approx(66.7, abs=0.1)
 
 

@@ -33,20 +33,17 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("no_razorpay_keys")
 def _sub_txn(make_transaction, **overrides):
     defaults = dict(
         kind=Transaction.Kind.SUBSCRIPTION_FAILURE,
-        failure_code="card_declined",  # a retriable root cause
+        failure_code="card_declined",
         amount=500,
     )
     defaults.update(overrides)
     return make_transaction(**defaults)
 
 
-# --- Step 0: MandateSequence creation is gated on "retriable and didn't immediately escalate" ---
-
-
 def test_registration_link_decision_creates_active_mandate_sequence(make_transaction):
     txn = _sub_txn(make_transaction, customer_id="cust_seq_create")
     with patch("agents.pipeline.complete_json", return_value=None), \
-         patch("recovery.tasks.random.random", return_value=0.0):  # force SUCCESS — irrelevant here
+         patch("recovery.tasks.random.random", return_value=0.0):
         process_transaction_event(str(txn.id))
 
     sequence = MandateSequence.objects.get(transaction=txn)
@@ -79,17 +76,13 @@ def test_guardrail_escalation_never_creates_mandate_sequence(make_transaction):
     assert MandateSequence.objects.count() == 0
 
 
-# --- Step 0 -> step 1: an ignored first nudge schedules the follow-up ---
-
-
 def test_step_0_failed_outcome_schedules_step_1_voice_reminder(make_transaction):
     txn = _sub_txn(make_transaction, customer_id="cust_seq_step0_fail")
     with patch("agents.pipeline.complete_json", return_value=None), \
-         patch("recovery.tasks.random.random", return_value=0.999):  # force FAILED
+         patch("recovery.tasks.random.random", return_value=0.999):
         process_transaction_event(str(txn.id))
 
     txn.refresh_from_db()
-    # Visibly HELD, never left stuck FAILED — the crux behaviour design.md Decision 1 describes.
     assert txn.status == Transaction.Status.HELD
 
     sequence = MandateSequence.objects.get(transaction=txn)
@@ -106,7 +99,7 @@ def test_step_0_failed_outcome_schedules_step_1_voice_reminder(make_transaction)
 def test_step_0_recovered_outcome_marks_sequence_recovered_not_scheduled(make_transaction):
     txn = _sub_txn(make_transaction, customer_id="cust_seq_step0_recovered")
     with patch("agents.pipeline.complete_json", return_value=None), \
-         patch("recovery.tasks.random.random", return_value=0.0):  # force SUCCESS
+         patch("recovery.tasks.random.random", return_value=0.0):
         process_transaction_event(str(txn.id))
 
     txn.refresh_from_db()
@@ -115,9 +108,6 @@ def test_step_0_recovered_outcome_marks_sequence_recovered_not_scheduled(make_tr
     assert sequence.status == MandateSequence.Status.RECOVERED
     assert sequence.current_step == 0
     assert ScheduledAction.objects.filter(transaction=txn).count() == 0
-
-
-# --- Step 1 dispatch: guardrails re-run, and a held step re-schedules itself ---
 
 
 def test_step_1_dispatch_cleared_creates_voice_reminder_action_through_guardrails(make_transaction):
@@ -131,7 +121,7 @@ def test_step_1_dispatch_cleared_creates_voice_reminder_action_through_guardrail
     )
 
     with patch("agents.pipeline.complete_json", return_value=None), \
-         patch("recovery.tasks.random.random", return_value=0.999):  # force FAILED -> advances to step 2
+         patch("recovery.tasks.random.random", return_value=0.999):
         dispatch_scheduled_action(scheduled.id)
 
     action = Action.objects.get(transaction=txn, action_type=Action.Type.VOICE)
@@ -176,9 +166,6 @@ def test_step_2_dispatch_always_escalates_and_marks_sequence_escalated(make_tran
     assert sequence.status == MandateSequence.Status.ESCALATED
 
 
-# --- Cancellation on mid-sequence recovery ---
-
-
 def test_cancellation_when_transaction_already_resolved_before_step_fires(make_transaction):
     txn = _sub_txn(make_transaction, customer_id="cust_seq_cancel")
     sequence = MandateSequence.objects.create(transaction=txn, current_step=1, status=MandateSequence.Status.ACTIVE)
@@ -186,7 +173,6 @@ def test_cancellation_when_transaction_already_resolved_before_step_fires(make_t
         transaction=txn, action_type="voice_reminder", reason="mandate_sequence_step",
         run_after=timezone.now() - timedelta(minutes=1), status=ScheduledAction.Status.PENDING,
     )
-    # The customer paid through some other path before the follow-up ever fired.
     txn.status = Transaction.Status.RECOVERED
     txn.save(update_fields=["status"])
 
@@ -200,12 +186,9 @@ def test_cancellation_when_transaction_already_resolved_before_step_fires(make_t
 
     sequence.refresh_from_db()
     assert sequence.status == MandateSequence.Status.CANCELLED
-    assert Action.objects.filter(transaction=txn).count() == action_count_before  # zero new actions
+    assert Action.objects.filter(transaction=txn).count() == action_count_before
     assert ScheduledAction.objects.filter(transaction=txn, status=ScheduledAction.Status.PENDING).count() == 0
     assert AuditLogEntry.objects.filter(transaction=txn, event_type="mandate_sequence_cancelled").exists()
-
-
-# --- Worker-restart survival: the DB row alone carries the pending step ---
 
 
 def test_worker_restart_survival_sweep_picks_up_due_step_from_db_alone(make_transaction):
@@ -229,7 +212,7 @@ def test_worker_restart_survival_sweep_picks_up_due_step_from_db_alone(make_tran
     assert scheduled.status == ScheduledAction.Status.DISPATCHED
 
     with patch("agents.pipeline.complete_json", return_value=None), \
-         patch("recovery.tasks.random.random", return_value=0.0):  # force SUCCESS
+         patch("recovery.tasks.random.random", return_value=0.0):
         dispatch_scheduled_action(scheduled.id)
 
     txn.refresh_from_db()

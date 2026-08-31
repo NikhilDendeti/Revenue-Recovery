@@ -1,12 +1,5 @@
 import Icon from "./Icon";
 
-/* Buttons.
- *
- * Every variant implements hover / focus-visible / active / disabled, and the
- * focus ring comes from the global :focus-visible rule so it can never be
- * styled away. On coarse pointers every size grows to the 44px touch minimum.
- */
-
 const BASE =
   "relative inline-flex items-center justify-center gap-2 rounded-full font-semibold " +
   "whitespace-nowrap select-none transition-[background-color,color,border-color,box-shadow,transform] " +
@@ -14,9 +7,6 @@ const BASE =
   "disabled:pointer-events-none disabled:opacity-45 disabled:saturate-50 disabled:active:scale-100";
 
 const VARIANTS = {
-  // Hover deepens rather than brightens: white on --color-brand-hover is only
-  // 3.69:1, so a "lighter on hover" primary would fail AA exactly while the
-  // pointer is on it. The lift + glow carry the interaction feedback instead.
   primary: "bg-brand text-white shadow-glow hover:bg-brand-strong hover:shadow-lift",
   secondary: "border border-white/15 bg-white/10 text-fg hover:border-white/25 hover:bg-white/18",
   outline: "border border-hairline-strong bg-transparent text-fg-muted hover:border-fg-subtle hover:bg-surface-3 hover:text-fg",
@@ -80,7 +70,6 @@ const ICON_SIZES = {
   lg: "h-12 w-12",
 };
 
-/** Icon-only button. `label` is required — it becomes the accessible name. */
 export function IconButton({
   icon,
   label,

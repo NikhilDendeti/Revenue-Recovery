@@ -21,9 +21,6 @@ def _dec(action=Decision.Action.NEW_PAYMENT_LINK):
     return Decision(chosen_action=action, reasoning_text="test")
 
 
-# --- 1. Confidence floor ---
-
-
 def test_confidence_floor_blocks_low_confidence(make_transaction):
     txn = make_transaction()
     verdict = evaluate_guardrails(txn, _diag(confidence=0.35), _dec())
@@ -39,9 +36,6 @@ def test_confidence_floor_passes_high_confidence(make_transaction):
     assert verdict.escalate is False
     event = GuardrailEvent.objects.get(transaction=txn, rule_name="confidence_floor")
     assert event.rule_result == GuardrailEvent.Result.PASSED
-
-
-# --- 2. Max retry attempts ---
 
 
 def test_max_retry_attempts_blocks_after_limit(make_transaction):
@@ -60,11 +54,7 @@ def test_max_retry_attempts_passes_under_limit(make_transaction):
     verdict = evaluate_guardrails(txn, _diag(), _dec(Decision.Action.RETRY_ORDER))
     event = GuardrailEvent.objects.get(transaction=txn, rule_name="max_retry_attempts")
     assert event.rule_result == GuardrailEvent.Result.PASSED
-    # insufficient_funds (not "card") clears the cooldown rule too, so this should fully clear
     assert verdict.cleared is True
-
-
-# --- 3. Spend / action ceiling ---
 
 
 def test_spend_ceiling_blocks_regardless_of_confidence(make_transaction):
@@ -80,9 +70,6 @@ def test_spend_ceiling_passes_under_ceiling(make_transaction):
     verdict = evaluate_guardrails(txn, _diag(), _dec(Decision.Action.RETRY_ORDER))
     event = GuardrailEvent.objects.get(transaction=txn, rule_name="spend_ceiling")
     assert event.rule_result == GuardrailEvent.Result.PASSED
-
-
-# --- 4. Cooldown between retries ---
 
 
 def test_card_decline_retry_is_held_not_immediate(make_transaction):
@@ -101,9 +88,6 @@ def test_non_card_retry_is_not_held_by_cooldown_rule(make_transaction):
     event = GuardrailEvent.objects.get(transaction=txn, rule_name="cooldown_between_retries")
     assert event.rule_result == GuardrailEvent.Result.PASSED
     assert verdict.cleared is True
-
-
-# --- 5. Contact frequency cap ---
 
 
 def test_contact_cap_passes_first_contact(make_transaction):
@@ -164,12 +148,8 @@ def test_contact_cap_race_only_one_of_two_concurrent_contacts_clears(make_transa
     assert ContactCooldown.objects.filter(customer_id="cust_race").count() == 1
 
 
-# --- 5b. Contact frequency cap, extended: a broken promise-to-pay ---
-
-
 def test_broken_promise_blocks_and_escalates_even_outside_cooldown(make_transaction):
     txn = make_transaction(customer_id="cust_broken_promise", amount=500)
-    # Well outside the ordinary 24h cooldown — the timestamp check alone would pass.
     ContactCooldown.objects.create(
         customer_id="cust_broken_promise", last_contacted_at=timezone.now() - timedelta(days=10)
     )
@@ -195,13 +175,7 @@ def test_no_broken_promise_is_unaffected_by_the_extension(make_transaction):
     assert verdict.escalate is False
 
 
-# --- 6. Compliance hours ---
-
-
 def _local_time_at(hour):
-    # Build an aware datetime at `hour` in the project's actual local timezone
-    # (Asia/Kolkata) — replacing hour on a UTC-aware now() would silently test the
-    # wrong wall-clock hour once converted to local time inside guardrails.py.
     return timezone.localtime(timezone.now()).replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
@@ -237,9 +211,6 @@ def txn_kind_receivable():
     return Transaction.Kind.RECEIVABLE
 
 
-# --- Full pass ---
-
-
 def test_all_rules_pass_yields_cleared_verdict(make_transaction):
     txn = make_transaction(amount=500, failure_code="insufficient_funds", customer_id="cust_all_clear")
     verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.RETRY_ORDER))
@@ -247,11 +218,6 @@ def test_all_rules_pass_yields_cleared_verdict(make_transaction):
     assert verdict.escalate is False
     assert verdict.hold_until is None
     assert GuardrailEvent.objects.filter(transaction=txn, rule_result=GuardrailEvent.Result.BLOCKED).count() == 0
-
-
-# --- checkout_dropoff: same guardrails as other consumer flows, scoped the same way
-#     (design.md Decision 6 of add-checkout-dropoff-recovery — no code changes to this
-#     module; these tests prove the existing rules already apply correctly by construction) ---
 
 
 def _dropoff_txn(make_transaction, **overrides):
@@ -327,7 +293,7 @@ def test_checkout_dropoff_never_hits_retry_guardrails(make_transaction):
     txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_no_retry", amount=500)
     verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
     max_retry_event = GuardrailEvent.objects.filter(transaction=txn, rule_name="max_retry_attempts")
-    assert not max_retry_event.exists()  # never even evaluated — not a retry action
+    assert not max_retry_event.exists()
     cooldown_event = GuardrailEvent.objects.get(transaction=txn, rule_name="cooldown_between_retries")
     assert cooldown_event.rule_result == GuardrailEvent.Result.PASSED
     assert verdict.cleared is True

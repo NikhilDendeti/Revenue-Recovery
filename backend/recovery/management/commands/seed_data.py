@@ -13,18 +13,14 @@ from recovery.models import Action, AuditLogEntry, ContactCooldown, Decision, Di
 FIRST_NAMES = ["Aarav", "Vivaan", "Diya", "Ananya", "Ishaan", "Priya", "Rohan", "Kavya", "Arjun", "Meera", "Karthik", "Sneha"]
 LAST_NAMES = ["Sharma", "Verma", "Iyer", "Reddy", "Nair", "Gupta", "Menon", "Rao", "Kapoor", "Joshi"]
 
-# Real Razorpay reason codes (card-flavored) — see agents/pipeline.py's _CODE_DIAGNOSES
-# for how each of these resolves to a root cause and action.
 PAYMENT_FAILURE_CODES = [
     ("insufficient_funds", 0.28),
     ("card_declined", 0.22),
     ("card_expired", 0.12),
     ("payment_timed_out", 0.14),
-    ("", 0.10),  # no code at all — deliberately ambiguous, exercises the confidence floor
+    ("", 0.10),
     ("issuer_technical_error", 0.14),
 ]
-# Real Razorpay reason codes (UPI-flavored) — folded into _seed_payment_degradation
-# alongside PAYMENT_FAILURE_CODES so seeded data can exercise a UPI failure path too.
 UPI_FAILURE_CODES = [
     ("invalid_vpa", 0.30),
     ("vpa_resolution_failed", 0.20),
@@ -34,8 +30,6 @@ UPI_FAILURE_CODES = [
     ("payment_timed_out", 0.05),
     ("payment_cancelled", 0.05),
 ]
-# Share of seeded payment_degradation transactions drawn from the UPI pool rather than
-# the card pool above.
 UPI_SHARE = 0.3
 SUBSCRIPTION_FAILURE_CODES = [
     ("reqauth_mandate_not_acknowledged", 0.20),
@@ -45,26 +39,18 @@ SUBSCRIPTION_FAILURE_CODES = [
     ("insufficient_funds", 0.20),
     ("", 0.10),
 ]
-# Last payment method attempted before a checkout_dropoff — free text like failure_code,
-# not a closed vocabulary (agents/pipeline.py's diagnosis tree only cares whether this is
-# blank). The blank share stands in for "never attempted a payment method at all" (browse
-# abandonment, per design.md Decision 3 of add-checkout-dropoff-recovery).
 CHECKOUT_DROPOFF_PAYMENT_METHODS = [
     ("upi", 0.35),
     ("card", 0.30),
     ("netbanking", 0.15),
     ("wallet", 0.10),
-    ("", 0.10),  # never attempted a payment method at all
+    ("", 0.10),
 ]
-# Age buckets (hours-ago range) a seeded checkout_dropoff row is drawn from, cycled across
-# the seeded set so every bucket in agents/pipeline.py's decision tree (fresh/short-window/
-# aging/cold) is represented, not just the happy-path recent one. Each row's draw is still
-# clamped to at least CHECKOUT_DROPOFF_AT_RISK_HOURS old at seed time (design.md Decision 2).
 CHECKOUT_DROPOFF_AGE_BUCKETS_HOURS = [
-    (0.5, 2),     # fresh
-    (2, 24),      # short-window
-    (24, 72),     # aging
-    (72, 240),    # cold
+    (0.5, 2),
+    (2, 24),
+    (24, 72),
+    (72, 240),
 ]
 
 
@@ -96,12 +82,6 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         if opts["flush"]:
-            # AuditLogEntry is deliberately untouched: it's protected by a DB-level
-            # trigger (migration 0002), not just the model's save()/delete() guards, so
-            # even a bulk queryset .delete() from here would be rejected outright.
-            # That's the point — for a genuinely clean slate, recreate the database
-            # (delete backend/db.sqlite3, or drop/recreate it if pointed at Postgres,
-            # then migrate again), don't fight the trigger from application code.
             self.stdout.write("Flushing existing transactions (audit log is immutable and left intact)...")
             try:
                 with db_transaction.atomic():
@@ -169,8 +149,6 @@ class Command(BaseCommand):
     def _seed_receivable(self, n):
         out = []
         for i in range(n):
-            # Push a couple of high-value ones above the spend ceiling (escalation demo)
-            # and above the voice-showcase-worthy threshold.
             if i == 0:
                 amount = round(random.uniform(60000, 120000), 2)
             else:
@@ -191,22 +169,14 @@ class Command(BaseCommand):
         ceiling = settings.GUARDRAILS["SPEND_CEILING_INR"]
         for i in range(n):
             low, high = CHECKOUT_DROPOFF_AGE_BUCKETS_HOURS[i % len(CHECKOUT_DROPOFF_AGE_BUCKETS_HOURS)]
-            # Every row satisfies checkout_initiated_at <= now - CHECKOUT_DROPOFF_AT_RISK_HOURS
-            # by construction (design.md Decision 2) — the bucket's own floor is raised to
-            # the at-risk window when the two disagree.
             low = max(low, at_risk_floor)
             high = max(high, low + 0.1)
             hours_ago = random.uniform(low, high)
             checkout_initiated_at = timezone.now() - timedelta(hours=hours_ago)
 
-            # Guarantee at least one "never attempted a payment method" row (i == 1) so the
-            # blank share is always represented regardless of the random draw, alongside the
-            # weighted-random draw (which itself usually produces a populated value).
             last_payment_method = "" if i == 1 else _weighted_choice(CHECKOUT_DROPOFF_PAYMENT_METHODS)
 
             if i == 0:
-                # Push one above the spend ceiling for guardrail-escalation coverage,
-                # mirroring _seed_receivable's high-value-outlier pattern above.
                 amount = round(random.uniform(ceiling + 5000, ceiling + 40000), 2)
             else:
                 amount = round(random.uniform(300, 15000), 2)

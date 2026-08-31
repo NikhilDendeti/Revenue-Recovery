@@ -1,20 +1,9 @@
-/* Formatting + presentation descriptors.
- *
- * Every status, outcome, flow, and guardrail result resolves to a descriptor
- * carrying a text `label` and an `icon` name alongside its `tone`, so no state
- * is ever communicated by colour alone.
- *
- * Class strings are written out literally rather than composed at runtime —
- * Tailwind scans source text, so `bg-${tone}-tint` would never be generated.
- */
-
 export function inr(amount) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(
     Number(amount) || 0
   );
 }
 
-/** Compact form for headline figures: ₹12.4L, ₹1.2Cr. */
 export function inrCompact(amount) {
   const n = Number(amount) || 0;
   const abs = Math.abs(n);
@@ -42,15 +31,11 @@ export function absoluteTime(iso) {
   return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** Free-text backend values (root causes, event types, rule names) → prose. */
 export function humanize(value) {
   if (!value) return "—";
   const text = String(value).replace(/[_-]+/g, " ").trim();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
-
-/* ------------------------------------------------------------------ tones */
-/* `brand` is intent only (actions, active nav, live). The rest are outcomes. */
 
 export const TONE = {
   brand: {
@@ -115,8 +100,6 @@ export function tone(name) {
   return TONE[name] || TONE.neutral;
 }
 
-/* --------------------------------------------------------------- statuses */
-
 export const STATUS_META = {
   open: { label: "Open", short: "Open", tone: "neutral", icon: "dot", blurb: "Detected, not yet picked up" },
   processing: { label: "Processing", short: "In flight", tone: "info", icon: "activity", blurb: "The agent is working it" },
@@ -130,7 +113,6 @@ export function statusMeta(status) {
   return STATUS_META[status] || STATUS_META.open;
 }
 
-/** Operational grouping used to order the transaction rows by urgency. */
 export const STATUS_GROUPS = [
   {
     key: "attention",
@@ -157,8 +139,6 @@ export const STATUS_GROUPS = [
     statuses: ["recovered"],
   },
 ];
-
-/* ------------------------------------------------------------------ flows */
 
 export const KIND_META = {
   payment_degradation: { label: "Payment degradation", short: "Payment", icon: "card" },
@@ -187,10 +167,7 @@ export const STATUS_FILTERS = [
   { value: "failed", label: "Failed" },
 ];
 
-/* ---------------------------------------------------------------- actions */
-
 export const ACTION_LABEL = {
-  // Decision.Action — what the agent decided to do.
   retry_order: "Re-attempt same order",
   new_payment_link: "Fresh payment link",
   registration_link: "Registration link",
@@ -198,7 +175,6 @@ export const ACTION_LABEL = {
   voice_reminder: "Hinglish voice reminder",
   escalate: "Escalate to human queue",
   hold: "Hold — guardrail cooldown",
-  // Action.Type — the channel the executed action actually went out on.
   retry: "Payment retry",
   email: "Email",
   whatsapp: "WhatsApp",
@@ -234,8 +210,6 @@ export const ACTION_RESULT_META = {
   simulated: { label: "Simulated", tone: "neutral", icon: "beaker" },
 };
 
-/* ------------------------------------------------------------- guardrails */
-
 export const RULE_LABEL = {
   max_retry_attempts: "Max retry attempts",
   contact_frequency_cap: "Contact frequency cap",
@@ -267,8 +241,6 @@ export function guardrailResultMeta(result) {
   return GUARDRAIL_RESULT_META[result] || { label: humanize(result), tone: "neutral", icon: "dot" };
 }
 
-/* ---------------------------------------------------------------- actors */
-
 export const ACTOR_META = {
   agent: { label: "Agent", icon: "bot", tone: "brand" },
   system: { label: "System", icon: "cog", tone: "neutral" },
@@ -278,10 +250,6 @@ export const ACTOR_META = {
 export function actorMeta(actor) {
   return ACTOR_META[actor] || { label: humanize(actor), icon: "cog", tone: "neutral" };
 }
-
-/* -------------------------------------------------- back-compat shorthands
- * Kept so existing call sites keep resolving. `cls` is the pill class string.
- */
 
 function pill(meta) {
   return { label: meta.label, icon: meta.icon, tone: meta.tone, cls: tone(meta.tone).chip };

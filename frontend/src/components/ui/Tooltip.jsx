@@ -1,13 +1,5 @@
 import { useState } from "react";
 
-/* Tooltip.
- *
- * Shows on hover and on keyboard focus within, dismisses on Escape, and never
- * takes focus itself — so it can't trap a keyboard user. The label is also
- * rendered as screen-reader-only text, which is what actually conveys it to
- * assistive tech; the floating bubble is purely visual.
- */
-
 const SIDES = {
   top: "bottom-full left-1/2 mb-2 -translate-x-1/2",
   bottom: "top-full left-1/2 mt-2 -translate-x-1/2",

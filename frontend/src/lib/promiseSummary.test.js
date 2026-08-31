@@ -1,9 +1,3 @@
-// Uses Node's built-in test runner (node:test / node:assert) — no test framework
-// (vitest/jest/@testing-library) exists anywhere in this repo yet, so this covers the
-// PromiseTracker panel's counting logic (extracted into promiseSummary.js precisely so
-// it's testable without a JSX-capable DOM test runner) without introducing one.
-// Run with: node --test src/lib/promiseSummary.test.js
-
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

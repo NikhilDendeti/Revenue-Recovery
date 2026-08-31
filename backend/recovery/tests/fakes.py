@@ -79,7 +79,6 @@ class FakeStorage(StorageInterface):
         self._next_id += 1
         return self._next_id
 
-    # --- transactions ---
     def get_transaction(self, transaction_id):
         try:
             return self.transactions[transaction_id]
@@ -112,7 +111,6 @@ class FakeStorage(StorageInterface):
     def open_transaction_ids(self):
         return [t.id for t in self.transactions.values() if t.status == "open"]
 
-    # --- pipeline records ---
     def record_diagnosis(self, transaction_id, diagnosis):
         stored = DiagnosisDTO(**{**diagnosis.__dict__, "id": self._id()})
         self.diagnoses.append(stored)
@@ -135,7 +133,6 @@ class FakeStorage(StorageInterface):
     def latest_diagnosis_confidence(self, transaction_id, default=0.5):
         return self._latest_confidence
 
-    # --- audit ---
     def append_audit(self, transaction_id, *, event_type, actor, payload):
         entry = AuditEntryDTO(transaction_id=transaction_id, event_type=event_type,
                               actor=actor, payload=payload,
@@ -148,7 +145,6 @@ class FakeStorage(StorageInterface):
         """Just the event_type sequence — what most assertions actually care about."""
         return [e.event_type for e in self.audit]
 
-    # --- guardrail state ---
     def count_prior_retries(self, transaction_id):
         return self._prior_retries
 
@@ -166,7 +162,6 @@ class FakeStorage(StorageInterface):
         })
         return slot
 
-    # --- scheduling ---
     def upsert_pending_scheduled_action(self, transaction_id, *, action_type, reason, run_after):
         self.scheduled.append({"transaction_id": transaction_id, "action_type": action_type,
                                "reason": reason, "run_after": run_after})
@@ -189,7 +184,6 @@ class FakeStorage(StorageInterface):
                                           run_after=s["run_after"], status="pending")
         return None
 
-    # --- read model ---
     def get_summary(self):
         return SummaryDTO(values=dict(self._summary))
 

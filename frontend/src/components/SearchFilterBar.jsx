@@ -3,13 +3,6 @@ import Button from "./ui/Button";
 import { KIND_FILTERS, STATUS_FILTERS } from "../lib/format";
 import { SEARCH_INPUT_ID } from "../lib/sections";
 
-/* Search + filters.
- *
- * Applied client-side to the transaction list already in memory — no extra
- * request, no query parameter. The predicate lives in Dashboard so it can move
- * server-side later without changing this component's shape.
- */
-
 function Chip({ active, onClick, children }) {
   return (
     <button
@@ -48,7 +41,6 @@ export default function SearchFilterBar({
     <div className="mx-auto w-full max-w-[110rem] px-5 sm:px-8 lg:px-10">
       <div className="flex flex-col gap-3 rounded-xl border border-hairline bg-surface-2/70 p-3 backdrop-blur-sm sm:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          {/* Search */}
           <div className="relative min-w-0 flex-1">
             <label htmlFor={searchId} className="sr-only">
               Search transactions by customer, id, or failure code
@@ -100,7 +92,6 @@ export default function SearchFilterBar({
           </div>
         </div>
 
-        {/* Filter chips — scroll sideways within the bar on narrow screens. */}
         <div className="no-scrollbar -mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-0.5">
           <span className="shrink-0 pr-1 text-caption uppercase text-fg-subtle">Flow</span>
           {KIND_FILTERS.map((f) => (

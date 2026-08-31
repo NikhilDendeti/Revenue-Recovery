@@ -1,21 +1,10 @@
-/* Hand-authored inline SVG icon set.
- *
- * No icon package (a Non-Goal) and no emoji — emoji render inconsistently
- * across platforms and screen readers announce them by their CLDR name, which
- * is never what the UI means. Icons here are decorative by default
- * (aria-hidden) and always sit next to a real text label; pass `title` only
- * when the icon genuinely is the label.
- */
-
 const STROKE = {
-  // sections / nav
   home: ["M3 10.6 12 3l9 7.6", "M5.6 9.4V21h12.8V9.4"],
   activity: ["M2.5 12h4L10 4l4 16 3.5-8h4"],
   shield: ["M12 3 5 6v5.6c0 4.4 2.9 7.9 7 9.4 4.1-1.5 7-5 7-9.4V6z"],
   list: ["M8.5 6.5h12M8.5 12h12M8.5 17.5h12", "M4 6.5h.01M4 12h.01M4 17.5h.01"],
   layers: ["m12 3 9 4.8-9 4.8-9-4.8z", "m3 12.6 9 4.8 9-4.8", "m3 16.9 9 4.8 9-4.8"],
 
-  // controls
   search: ["M11 4.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13z", "m15.8 15.8 4.2 4.2"],
   filter: ["M4 6.5h16M7 12h10M10 17.5h4"],
   close: ["m6 6 12 12M18 6 6 18"],
@@ -44,7 +33,6 @@ const STROKE = {
   calendar: ["M4.5 6.5h15v13h-15z", "M4.5 10.5h15", "M8.5 4v4.5M15.5 4v4.5"],
   phone: ["M7 3.5h2.8l1.5 3.9-2 1.4a12.2 12.2 0 0 0 5.9 5.9l1.4-2 3.9 1.5V17a2.5 2.5 0 0 1-2.7 2.5A16.6 16.6 0 0 1 4.5 6.2 2.5 2.5 0 0 1 7 3.5z"],
 
-  // status
   dotRing: ["M12 4.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15z"],
   check: ["m5 12.6 4.6 4.6L19 6.8"],
   escalate: ["M13.5 4H20v6.5", "M20 4l-8.5 8.5", "M18 14.5v4A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6h4"],
@@ -55,18 +43,15 @@ const STROKE = {
   alert: ["M12 4 2.9 20h18.2z", "M12 10v4.2M12 17.3h.01"],
   info: ["M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z", "M12 11v5.2M12 7.8h.01"],
 
-  // flows
   card: ["M3 7.6A1.6 1.6 0 0 1 4.6 6h14.8A1.6 1.6 0 0 1 21 7.6v8.8a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 16.4z", "M3 10.2h18", "M6.4 14.4h3.2"],
   repeat: ["M4 9.2V7.6A2.6 2.6 0 0 1 6.6 5H18", "m15 2.4 3.2 2.6L15 7.6", "M20 14.8v1.6a2.6 2.6 0 0 1-2.6 2.6H6", "m9 21.6-3.2-2.6L9 16.4"],
   invoice: ["M6 2.6h8.6L19 7v14.4H6z", "M14.4 2.6V7H19", "M9 12.4h6.4M9 16.4h4.4"],
-  // abandoned checkout — a shopping cart, no existing "flow" glyph reads as this.
   cart: [
     "M3 4h2.6l2.4 12.4A2 2 0 0 0 10 18h8a2 2 0 0 0 2-1.6L21.5 8H6.2",
     "M10.5 21.3a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z",
     "M17.5 21.3a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6z",
   ],
 
-  // actors / chain
   bot: ["M7.5 8h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z", "M12 4.8V8", "M9.6 12.6h.01M14.4 12.6h.01", "M10 15.6h4", "M3 11.6v2.8M21 11.6v2.8"],
   cog: [
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",

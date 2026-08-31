@@ -42,8 +42,6 @@ def test_sequence_step_1_retriable_routes_to_voice_reminder_not_registration_lin
 def test_sequence_step_2_always_escalates_even_for_high_confidence_retriable_diagnosis():
     with patch("agents.pipeline.complete_json", return_value=None):
         result = run_pipeline(_txn(failure_code="insufficient_funds", sequence_step=2))
-    # Genuinely high-confidence and retriable — step 2 must still escalate outright,
-    # not because the diagnosis was weak.
     assert result["diagnosis"]["confidence"] >= 0.60
     assert result["diagnosis"]["root_cause"] in {"insufficient_funds"}
     assert result["decision"]["chosen_action"] == "escalate"

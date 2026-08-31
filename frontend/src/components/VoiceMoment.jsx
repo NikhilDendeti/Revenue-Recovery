@@ -1,13 +1,6 @@
 import Icon from "./ui/Icon";
 import Button, { IconButton } from "./ui/Button";
 
-/* The signature moment.
- *
- * Deliberately the loudest surface in the app — it is the one thing a judge is
- * meant to notice the instant it lands, so it gets the brand glow and the only
- * looping animation outside the live pulse.
- */
-
 function Wave() {
   return (
     <span aria-hidden="true" className="flex h-6 items-center gap-[3px]">

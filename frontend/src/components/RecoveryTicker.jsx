@@ -3,13 +3,6 @@ import Panel from "./ui/Surface";
 import EmptyState from "./ui/EmptyState";
 import { actionLabel, inr, kindMeta, statusMeta, timeAgo, tone } from "../lib/format";
 
-/* Panel 1 — the live feed.
- *
- * Every row is a button that opens that transaction's reasoning chain. The
- * insert animation is deliberately kept: it is the thing that makes the demo
- * feel live, and it is the one place motion is load-bearing.
- */
-
 function LiveState({ connected }) {
   return (
     <span

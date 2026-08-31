@@ -97,7 +97,7 @@ def test_process_transaction_event_is_idempotent_against_double_dispatch(make_tr
     process_transaction_event(str(txn.id))
     action_count_after_first = Action.objects.filter(transaction=txn).count()
 
-    process_transaction_event(str(txn.id))  # txn.status is no longer OPEN — must no-op
+    process_transaction_event(str(txn.id))
     assert Action.objects.filter(transaction=txn).count() == action_count_after_first
 
 
@@ -144,8 +144,6 @@ def test_trigger_voice_showcase_creates_action_and_promise_to_pay(make_transacti
     assert "79,713" in action.api_response["transcript"]
     entry = AuditLogEntry.objects.get(transaction=txn, event_type="voice_promise_to_pay")
     assert entry.payload["promise_to_pay_date"] == result["promise_to_pay_date"]
-    # A real, trackable PromiseToPay row now exists alongside the audit-log prose —
-    # independently retrievable, not just text inside the audit payload.
     promise = PromiseToPay.objects.get(transaction=txn)
     assert promise.status == PromiseToPay.Status.PENDING
     assert promise.source == PromiseToPay.Source.VOICE
@@ -176,12 +174,6 @@ def test_guardrail_events_are_logged_for_every_processed_transaction(make_transa
     }
 
 
-# --- Action-execution failure handling (harden-action-execution change) ---
-# A recovery action's Razorpay call can fail. It must never leave the transaction wedged
-# in PROCESSING: an unrecoverable error escalates, and a 404 on a stale order/invoice id
-# falls back to a fresh payment link.
-
-
 def test_execute_action_escalates_on_non_404_api_error(make_transaction):
     txn = make_transaction(failure_code="insufficient_funds", amount=500, customer_id="cust_5xx")
     err = rc.RazorpayError("/orders -> 500: server error", status_code=500)
@@ -198,14 +190,13 @@ def test_execute_action_escalates_on_non_404_api_error(make_transaction):
 def test_execute_action_falls_back_to_payment_link_on_404_order(make_transaction):
     txn = make_transaction(failure_code="insufficient_funds", amount=500, customer_id="cust_404_order")
     err = rc.RazorpayError("/orders/order_missing -> 404: not found", status_code=404)
-    # _call_razorpay 404s; the fallback create_payment_link runs for real in simulated mode.
     with patch("recovery.tasks._call_razorpay", side_effect=err):
         _execute_action(txn, Decision.Action.RETRY_ORDER, 0.82)
 
     txn.refresh_from_db()
     assert txn.status in {Transaction.Status.RECOVERED, Transaction.Status.FAILED}
     action = Action.objects.get(transaction=txn)
-    assert action.action_type == Action.Type.EMAIL  # a fresh payment link, not a same-order retry
+    assert action.action_type == Action.Type.EMAIL
     assert action.api_response["_recoverai_fallback"]["fallback_from"] == Decision.Action.RETRY_ORDER
     assert action.api_response["short_url"].startswith("https://rzp.io/l/sim")
     assert not AuditLogEntry.objects.filter(transaction=txn, event_type="action_failed").exists()
@@ -248,7 +239,6 @@ def test_process_transaction_event_escalates_on_unexpected_pipeline_error(make_t
     assert txn.status == Transaction.Status.ESCALATED
     assert txn.status != Transaction.Status.PROCESSING
     assert AuditLogEntry.objects.filter(transaction=txn, event_type="pipeline_error").exists()
-    # 'detected' is written before the pipeline runs — the audit trail stays coherent.
     assert AuditLogEntry.objects.filter(transaction=txn, event_type="detected").exists()
 
 
@@ -259,8 +249,6 @@ def test_dispatch_scheduled_action_escalates_on_unexpected_error(make_transactio
         transaction=txn, action_type="retry_order",
         run_after=timezone.now() - timedelta(minutes=1), status=ScheduledAction.Status.DISPATCHED,
     )
-    # A non-RazorpayError from the action layer bypasses _execute_action's inner catch
-    # and must be caught by dispatch_scheduled_action's safety net.
     with patch("recovery.tasks._call_razorpay", side_effect=RuntimeError("kaboom")):
         dispatch_scheduled_action(scheduled.id)
 

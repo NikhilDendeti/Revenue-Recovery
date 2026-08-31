@@ -69,9 +69,6 @@ export default function Dashboard({ onLogout }) {
   const activeSection = useActiveSection(SECTION_IDS);
   const reportedSummaryError = useRef(false);
 
-  // Fetch only — no synchronous state change, so the mount effect and the
-  // ticker-driven refresh below never restart a render pass. `retryTransactions`
-  // is the variant that shows the loading state, and it only runs from a press.
   const refreshTransactions = useCallback(() => {
     api
       .transactions()
@@ -93,17 +90,11 @@ export default function Dashboard({ onLogout }) {
     refreshTransactions();
   }, [refreshTransactions]);
 
-
-  // Cheap live refresh: re-pull the transaction table whenever a new ticker event
-  // lands, so the Audit Trail panel's status column stays in sync with the ticker.
-  // Keyed on the newest tick, not the list length — length pins at MAX_FEED and the
-  // effect would then stop firing for the rest of the session.
   const newestTick = ticks[0]?._key;
   useEffect(() => {
     if (newestTick) refreshTransactions();
   }, [newestTick, refreshTransactions]);
 
-  // Surface a summary failure once, rather than swallowing it.
   useEffect(() => {
     if (summaryError && !reportedSummaryError.current) {
       reportedSummaryError.current = true;
@@ -190,7 +181,6 @@ export default function Dashboard({ onLogout }) {
 
           <VoiceMoment moment={voiceMoment} onDismiss={() => setVoiceMoment(null)} onSelect={setSelectedId} />
 
-          {/* Transactions */}
           <section id="transactions" data-section aria-labelledby="transactions-heading" className="space-y-5">
             <SectionHeading
               id="transactions-heading"
@@ -272,7 +262,6 @@ export default function Dashboard({ onLogout }) {
             )}
           </section>
 
-          {/* Live panels */}
           <section id="live" data-section aria-labelledby="live-heading" className="space-y-5">
             <SectionHeading
               id="live-heading"
@@ -289,7 +278,6 @@ export default function Dashboard({ onLogout }) {
             </div>
           </section>
 
-          {/* Audit trail */}
           <section id="audit" data-section aria-labelledby="audit-heading" className="space-y-5">
             <SectionHeading
               id="audit-heading"

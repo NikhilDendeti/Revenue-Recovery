@@ -30,7 +30,6 @@ def test_raw_sql_update_against_audit_log_is_rejected(make_transaction):
                 )
     assert "append-only" in str(excinfo.value).lower()
 
-    # the row is unchanged — the failed statement (and its whole atomic block) rolled back
     entry.refresh_from_db()
     assert entry.event_type == "detected"
     assert entry.payload == {"original": True}

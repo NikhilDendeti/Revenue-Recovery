@@ -17,9 +17,6 @@ def _txn(**overrides):
     return base
 
 
-# --- Diagnosis heuristic: failure-code pattern matches ---
-
-
 @pytest.mark.parametrize(
     "failure_code,expected_root_cause",
     [
@@ -49,9 +46,6 @@ def test_diagnosis_rule_order_expired_beats_card_declined_on_overlap():
     assert result["decision"]["chosen_action"] == "new_payment_link"
 
 
-# --- Diagnosis heuristic: real Razorpay codes with an unambiguous root cause ---
-
-
 @pytest.mark.parametrize(
     "failure_code,expected_root_cause",
     [
@@ -72,9 +66,6 @@ def test_diagnosis_resolves_new_real_code_to_specific_root_cause(failure_code, e
     result = run_pipeline(_txn(failure_code=failure_code))
     diagnosis = result["diagnosis"]
     assert diagnosis["root_cause"] == expected_root_cause
-    # Every one of these is a real, known code with an unambiguous cause — confidence
-    # must be at or above the guardrail confidence floor so the diagnosis isn't
-    # generic-defaulted into a silent escalation.
     assert diagnosis["confidence"] >= 0.60
 
 
@@ -88,7 +79,7 @@ def test_diagnosis_recognizes_timed_out_variants_as_timeout_not_generic_default(
     result = run_pipeline(_txn(failure_code=failure_code))
     diagnosis = result["diagnosis"]
     assert diagnosis["root_cause"] == "network_timeout"
-    assert diagnosis["root_cause"] != "payment_declined"  # not the generic kind default
+    assert diagnosis["root_cause"] != "payment_declined"
 
 
 def test_diagnosis_exact_match_takes_precedence_over_substring_pattern():
@@ -120,7 +111,7 @@ def test_risk_check_failed_always_escalates_regardless_of_confidence():
     result = run_pipeline(_txn(failure_code="payment_risk_check_failed"))
     diagnosis = result["diagnosis"]
     assert diagnosis["root_cause"] == "risk_check_failed"
-    assert diagnosis["confidence"] >= 0.60  # high-confidence diagnosis, not a guess
+    assert diagnosis["confidence"] >= 0.60
     assert result["decision"]["chosen_action"] == "escalate"
 
 
@@ -153,9 +144,6 @@ def test_diagnosis_unrecognized_receivable_code_still_meets_kind_default_floor()
     assert result["diagnosis"]["confidence"] >= 0.60
 
 
-# --- Decision heuristic: kind-aware routing (the subscription regression) ---
-
-
 def test_subscription_failure_card_decline_routes_to_registration_link():
     result = run_pipeline(_txn(kind="subscription_failure", failure_code="card_declined"))
     assert result["diagnosis"]["root_cause"] == "card_declined"
@@ -182,16 +170,10 @@ def test_receivable_routes_to_invoice_reminder():
     assert result["decision"]["chosen_action"] == "invoice_reminder"
 
 
-# --- Escalation on low confidence / unknown root cause ---
-
-
 def test_low_confidence_diagnosis_escalates_instead_of_guessing():
     result = run_pipeline(_txn(failure_code=""))
     assert result["diagnosis"]["confidence"] < 0.60
     assert result["decision"]["chosen_action"] == "escalate"
-
-
-# --- checkout_dropoff diagnosis: signal-based decision tree (design.md Decision 3) ---
 
 
 def _dropoff_txn(*, hours_ago, amount, last_payment_method):
@@ -207,18 +189,11 @@ def _dropoff_txn(*, hours_ago, amount, last_payment_method):
 @pytest.mark.parametrize(
     "hours_ago,amount,last_payment_method,expected_root_cause,expected_confidence",
     [
-        # Row 1: recent + high-value + method attempted -> highest-intent, highest confidence.
         (1, 10000.0, "card", "high_value_recent_dropoff", 0.85),
-        # Row 2: recent + method attempted, but below the high-value cart threshold.
         (1, 2000.0, "upi", "recent_dropoff_payment_attempted", 0.80),
-        # Row 3: same-day but past the "recent" window, method attempted.
         (10, 2000.0, "netbanking", "short_window_dropoff", 0.68),
-        # Row 4: no payment method ever attempted, checked ahead of the age-only bands —
-        # even a stale (50h) cart with no method resolves here, not "aging_dropoff".
         (50, 2000.0, "", "browse_abandonment", 0.45),
-        # Row 5: multi-day-old, method attempted, still within the 72h aging window.
         (50, 2000.0, "card", "aging_dropoff", 0.55),
-        # Row 6: past a week old, method attempted -> genuinely low-confidence.
         (200, 2000.0, "card", "cold_dropoff", 0.32),
     ],
 )
@@ -236,9 +211,6 @@ def test_checkout_dropoff_missing_checkout_initiated_at_does_not_crash():
     txn = _txn(kind="checkout_dropoff", failure_code="", amount=2000.0, checkout_initiated_at=None, last_payment_method="")
     result = run_pipeline(txn)
     assert result["diagnosis"]["root_cause"] == "browse_abandonment"
-
-
-# --- checkout_dropoff decision: always new_payment_link, never retry_order ---
 
 
 def test_checkout_dropoff_confident_diagnosis_routes_to_new_payment_link():

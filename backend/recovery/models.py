@@ -199,10 +199,6 @@ class AuditLogEntry(models.Model):
         SYSTEM = "system", "System"
         HUMAN = "human", "Human"
 
-    # PROTECT, not CASCADE: a cascaded delete would issue a bulk DELETE against this
-    # table, and the append-only trigger (migration 0002) would reject it anyway —
-    # better to fail fast and obviously (ProtectedError) than abort mid-transaction on
-    # a trigger exception. A Transaction with audit history genuinely cannot be deleted.
     transaction = models.ForeignKey(Transaction, on_delete=models.PROTECT, related_name="audit_entries")
     event_type = models.CharField(max_length=64)
     actor = models.CharField(max_length=16, choices=Actor.choices)

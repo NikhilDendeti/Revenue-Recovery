@@ -5,14 +5,6 @@ import Wordmark from "./ui/Wordmark";
 import { SECTIONS, SEARCH_INPUT_ID } from "../lib/sections";
 import { scrollToSection, useScrolled } from "../lib/useNavState";
 
-/* The chrome.
- *
- * Fixed over the hero and transparent there, solidifying once the page
- * scrolls — the same trick a streaming home page uses so the billboard reads
- * edge to edge. Section navigation lives here on pointer viewports; on touch
- * it moves to the bottom bar (see MobileNav) rather than shrinking to fit.
- */
-
 function OperatorMenu({ connected, onLogout }) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef(null);
@@ -89,8 +81,6 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
 
   const jumpToSearch = () => {
     scrollToSection("transactions");
-    // Let the smooth scroll start before pulling focus, so the browser doesn't
-    // cancel it by jumping straight to the input.
     setTimeout(() => document.getElementById(SEARCH_INPUT_ID)?.focus(), 320);
   };
 
@@ -110,10 +100,6 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
           aria-label="RecoverAI — back to overview"
           className="shrink-0 rounded-lg"
         >
-          {/* Visibility lives on a plain wrapper, never on the component's own
-              className — Wordmark/Button already set a display utility, and two
-              competing display utilities resolve by Tailwind's emit order, not
-              by class order, so `hidden` on them is not reliable. */}
           <span className="sm:hidden">
             <Wordmark size="sm" />
           </span>
@@ -122,7 +108,6 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
           </span>
         </button>
 
-        {/* Section nav — pointer viewports only. */}
         <nav aria-label="Dashboard sections" className="ml-4 hidden items-center gap-0.5 lg:flex">
           {SECTIONS.map((s) => {
             const active = activeSection === s.id;
@@ -146,7 +131,6 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-          {/* Search — expands in place on desktop, jumps to the filter bar on touch. */}
           <div className="hidden items-center lg:flex">
             {searchOpen ? (
               <div className="relative">
@@ -186,7 +170,6 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
             <IconButton icon="search" label="Search transactions" size="sm" onClick={jumpToSearch} />
           </span>
 
-          {/* Live state */}
           <span
             className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.625rem] font-semibold tracking-wide uppercase sm:inline-flex ${
               connected ? "border-brand/45 bg-brand-tint text-brand-ink" : "border-hairline-strong bg-surface-3 text-fg-subtle"
@@ -199,7 +182,6 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
             {connected ? "Live" : "Offline"}
           </span>
 
-          {/* Primary action */}
           <span className="hidden sm:block">
             <Button size="sm" icon={replaying ? undefined : "play"} loading={replaying} onClick={onReplay}>
               {replaying ? "Replaying…" : "Replay batch"}

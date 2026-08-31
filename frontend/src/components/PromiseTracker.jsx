@@ -8,12 +8,6 @@ import { api } from "../lib/api";
 import { inr, tone } from "../lib/format";
 import { summarizePromises } from "../lib/promiseSummary";
 
-/* Panel — promise-to-pay commitments, tracked from creation (the voice channel today)
- * through resolution (kept/broken). Self-fetching, matching ChainDrawer's
- * load/retry/loading contract: every asynchronous surface gets its own loading,
- * error-with-retry, and empty state rather than silently showing nothing.
- */
-
 const STATUS_META = {
   pending: { label: "Pending", tone: "info", icon: "clock" },
   kept: { label: "Kept", tone: "ok", icon: "check" },
@@ -41,8 +35,6 @@ export default function PromiseTracker() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch only — no synchronous state change, matching every other self-fetching panel
-  // (ChainDrawer's `load`). `retry` is the press-driven variant that shows loading again.
   const load = useCallback(() => {
     api
       .promisesToPay()

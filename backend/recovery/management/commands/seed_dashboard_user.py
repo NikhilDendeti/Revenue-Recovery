@@ -22,7 +22,7 @@ class Command(BaseCommand):
         User = get_user_model()
         user, created = User.objects.get_or_create(username=username)
         user.set_password(password)
-        user.is_staff = True  # convenient for /admin/ during local dev; not otherwise required by the API
+        user.is_staff = True
         user.save()
 
         verb = "Created" if created else "Updated"

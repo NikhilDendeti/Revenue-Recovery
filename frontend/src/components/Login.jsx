@@ -4,12 +4,6 @@ import Button from "./ui/Button";
 import Icon from "./ui/Icon";
 import Wordmark from "./ui/Wordmark";
 
-/* The cinematic entry screen.
- *
- * Behaviour is unchanged from before the redesign: submit -> login() -> either
- * onSuccess() or an inline error. Everything else here is presentation.
- */
-
 const FEATURES = [
   { icon: "activity", text: "Watch every recovery decision land, transaction by transaction" },
   { icon: "shield", text: "Deterministic guardrails, firing live — never an LLM call" },
@@ -48,7 +42,6 @@ export default function Login({ onSuccess }) {
 
   return (
     <div className="cine-bg grain relative min-h-screen overflow-hidden">
-      {/* Cinematic ground + readability scrim. */}
       <div aria-hidden="true" className="scrim-b pointer-events-none absolute inset-0" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 sm:px-8 lg:px-10">
@@ -59,7 +52,6 @@ export default function Login({ onSuccess }) {
 
         <main className="flex flex-1 items-center justify-center py-10 lg:py-16">
           <div className="grid w-full items-center gap-12 lg:grid-cols-[1.05fr_auto] lg:gap-16">
-            {/* Pitch — hidden on small screens so the form owns the fold. */}
             <div className="hidden lg:block">
               <p className="text-caption uppercase text-brand-ink">Autonomous revenue recovery</p>
               <p className="mt-3 text-display text-fg text-balance">
@@ -83,7 +75,6 @@ export default function Login({ onSuccess }) {
               </ul>
             </div>
 
-            {/* Auth card. */}
             <div className="mx-auto w-full max-w-[26rem]">
               <form
                 onSubmit={handleSubmit}

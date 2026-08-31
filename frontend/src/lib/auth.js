@@ -39,9 +39,6 @@ export async function login(username, password) {
   return data;
 }
 
-// One silent refresh attempt — used by api.js on a 401. Returns the new access
-// token, or null if the refresh token itself is missing/expired (caller should then
-// force a full re-login rather than retrying again).
 export async function refreshAccessToken() {
   const refresh = getRefreshToken();
   if (!refresh) return null;

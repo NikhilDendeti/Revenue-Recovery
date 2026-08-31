@@ -5,8 +5,6 @@ import sys
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-    # Windows terminals default stdout/stderr to cp1252, which can't encode the ₹ sign
-    # this project prints everywhere (seed_data, replay_batch, ...) — force UTF-8.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")

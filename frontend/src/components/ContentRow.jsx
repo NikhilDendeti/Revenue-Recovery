@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "./ui/Icon";
 
-/* A horizontally-scrollable row of cards.
- *
- * Scrolls by touch, by chevron, and by Tab (focusing a card scrolls it into
- * view). The row owns its overflow — the page body never scrolls sideways.
- */
-
 export default function ContentRow({ title, caption, count, tone: toneClass = "bg-fg-subtle", children }) {
   const scroller = useRef(null);
   const [atStart, setAtStart] = useState(true);
@@ -54,7 +48,6 @@ export default function ContentRow({ title, caption, count, tone: toneClass = "b
           {caption && <p className="mt-1 truncate text-meta text-fg-subtle">{caption}</p>}
         </div>
 
-        {/* Pointer-only paging controls. */}
         <div className="hidden shrink-0 items-center gap-1.5 opacity-0 transition-opacity duration-200 ease-standard group-hover/row:opacity-100 group-focus-within/row:opacity-100 md:flex">
           <button
             type="button"
@@ -78,7 +71,6 @@ export default function ContentRow({ title, caption, count, tone: toneClass = "b
       </div>
 
       <div className="relative mx-auto w-full max-w-[110rem]">
-        {/* Edge fades, shown only where there is more content that way. */}
         <span
           aria-hidden="true"
           className={`pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-void to-transparent transition-opacity duration-200 ${

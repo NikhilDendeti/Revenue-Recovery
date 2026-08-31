@@ -3,10 +3,6 @@ import Skeleton from "./ui/Skeleton";
 import { Card } from "./ui/Surface";
 import { inr, tone } from "../lib/format";
 
-/* The KPI rail — four figures, read straight off the existing /summary/
- * payload. No field here is new; nothing extra is requested from the server.
- */
-
 function Tile({ icon, label, value, detail, toneName = "neutral" }) {
   const t = tone(toneName);
   return (

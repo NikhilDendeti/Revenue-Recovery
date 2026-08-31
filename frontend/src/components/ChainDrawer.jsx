@@ -20,15 +20,6 @@ import {
   tone,
 } from "../lib/format";
 
-/* The reasoning chain, as a real modal dialog.
- *
- * The endpoint has always returned diagnoses, decisions, actions, guardrail
- * events and scheduled actions; the old drawer rendered only the audit
- * entries, as raw JSON. Tabs surface the rest without hiding anything — the
- * verbatim payloads are still one disclosure away, because a judge inspecting
- * the audit trail needs to see exactly what was written.
- */
-
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])';
 
@@ -40,8 +31,6 @@ const TABS = [
   { key: "guardrails", label: "Guardrails", icon: "shield", collection: "guardrail_events" },
   { key: "scheduled", label: "Scheduled", icon: "clock", collection: "scheduled_actions" },
 ];
-
-/* ----------------------------------------------------------------- pieces */
 
 function Block({ children, className = "" }) {
   return <div className={`rounded-lg border border-hairline bg-surface-2 p-4 ${className}`}>{children}</div>;
@@ -109,8 +98,6 @@ function TabEmpty({ what }) {
     />
   );
 }
-
-/* ------------------------------------------------------------- tab bodies */
 
 function Timeline({ entries }) {
   if (entries.length === 0) return <TabEmpty what="audit entries" />;
@@ -203,11 +190,6 @@ function Decisions({ items }) {
             <div className="mt-4">
               <p className="text-caption uppercase text-fg-subtle">Guardrails evaluated</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {/* `guardrail_checks_passed` is a list of {rule_name, rule_result}
-                    dicts (tasks.py writes GuardrailEvent .values(...)), and it is
-                    NOT filtered to passes — so a blocked rule must not be shown
-                    with a green check. A bare string is tolerated in case the
-                    shape ever simplifies. */}
                 {d.guardrail_checks_passed.map((check, i) => {
                   const isString = typeof check === "string";
                   const name = isString ? check : check?.rule_name;
@@ -353,8 +335,6 @@ function Scheduled({ items, mandateSequence }) {
   );
 }
 
-/* ------------------------------------------------------------------ shell */
-
 export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase }) {
   const [chain, setChain] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -366,9 +346,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
   const tablistRef = useRef(null);
   const titleId = useId();
 
-  // Fetch only. The dialog mounts already in its loading state, so nothing here
-  // sets state synchronously inside the effect; `retry` below is the press-driven
-  // variant that puts it back into loading.
   const load = useCallback(() => {
     if (!transactionId) return;
     api
@@ -388,8 +365,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
     load();
   }, [load]);
 
-  // Lock the page behind the dialog, and make it inert so keyboard focus cannot
-  // reach it (the Tab trap below only sees events that start inside the panel).
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -405,7 +380,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
     };
   }, []);
 
-  // Move focus in, and hand it back to whatever opened the dialog on close.
   useEffect(() => {
     const opener = document.activeElement;
     panelRef.current?.focus();
@@ -460,7 +434,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      /* clipboard unavailable — the id is on screen anyway */
     }
   };
 
@@ -488,7 +461,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
         className="animate-slide-up-sheet flex h-[92dvh] max-h-full w-full flex-col overflow-hidden rounded-t-2xl border border-hairline-strong bg-surface shadow-modal outline-none
           sm:animate-slide-in-right sm:h-full sm:max-w-2xl sm:rounded-none sm:rounded-l-2xl sm:border-y-0 sm:border-r-0"
       >
-        {/* Header */}
         <header className="relative shrink-0 overflow-hidden border-b border-hairline">
           <span aria-hidden="true" className="cine-bg pointer-events-none absolute inset-0 opacity-60" />
           <div className="relative px-5 pt-4 pb-5 sm:px-6">
@@ -545,7 +517,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
           </div>
         </header>
 
-        {/* Tabs */}
         <div
           ref={tablistRef}
           role="tablist"
@@ -589,7 +560,6 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
           })}
         </div>
 
-        {/* Panel body */}
         <div
           role="tabpanel"
           id={`tabpanel-${tab}`}

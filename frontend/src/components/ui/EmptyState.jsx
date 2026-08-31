@@ -1,10 +1,6 @@
 import Icon from "./Icon";
 import Button from "./Button";
 
-/* One empty/error shape for every surface. `variant="error"` is the same
- * anatomy in the alert palette so a failure never looks like "no data yet".
- */
-
 export default function EmptyState({
   icon = "inbox",
   title,

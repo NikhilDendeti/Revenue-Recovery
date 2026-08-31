@@ -4,13 +4,6 @@ import Skeleton from "./ui/Skeleton";
 import { inr, inrCompact } from "../lib/format";
 import { scrollToSection } from "../lib/useNavState";
 
-/* The billboard.
- *
- * Leads with the one number an operator wants first (value recovered) and the
- * one action they take (replay the batch). Everything else on this surface is
- * context for those two things.
- */
-
 function Stat({ icon, label, value, tone = "text-fg" }) {
   return (
     <div className="flex items-center gap-2.5">
@@ -41,7 +34,6 @@ export default function Hero({ summary, connected, replaying, onReplay }) {
 
       <div className="relative mx-auto flex min-h-[clamp(28rem,70vh,42rem)] w-full max-w-[110rem] flex-col justify-end px-5 pt-28 pb-10 sm:px-8 sm:pt-32 lg:px-10 lg:pb-14">
         <div className="max-w-3xl">
-          {/* Live state + batch context */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span
               className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-caption uppercase ${
@@ -61,7 +53,6 @@ export default function Hero({ summary, connected, replaying, onReplay }) {
             Recovery Room overview
           </h1>
 
-          {/* The headline figure */}
           <p className="mt-5 text-caption uppercase text-fg-subtle">Revenue recovered</p>
           {summary ? (
             <p className="tabular mt-1.5 text-display text-fg">{inrCompact(summary.recovered_total)}</p>
@@ -76,7 +67,6 @@ export default function Hero({ summary, connected, replaying, onReplay }) {
             <Skeleton className="mt-2 h-4 w-64" />
           )}
 
-          {/* Recovery-rate meter */}
           <div className="mt-7 max-w-md">
             <div className="mb-2 flex items-baseline justify-between gap-3">
               <span className="text-caption uppercase text-fg-subtle">Recovery rate</span>
@@ -97,7 +87,6 @@ export default function Hero({ summary, connected, replaying, onReplay }) {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button size="lg" icon={replaying ? undefined : "play"} loading={replaying} onClick={onReplay}>
               {replaying ? "Replaying batch…" : "Trigger batch replay"}
@@ -107,7 +96,6 @@ export default function Hero({ summary, connected, replaying, onReplay }) {
             </Button>
           </div>
 
-          {/* Supporting figures */}
           <div className="mt-9 flex flex-wrap gap-x-8 gap-y-4">
             {summary ? (
               <>

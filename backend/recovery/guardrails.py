@@ -44,7 +44,6 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     hold_until = None
     hold_reason = ""
 
-    # 1. Confidence floor — never guess with money.
     if diagnosis.confidence < cfg["CONFIDENCE_FLOOR"]:
         _log(
             txn, "confidence_floor", GuardrailEvent.Result.BLOCKED,
@@ -54,7 +53,6 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     else:
         _log(txn, "confidence_floor", GuardrailEvent.Result.PASSED, f"confidence {diagnosis.confidence:.2f}")
 
-    # 2. Max retry attempts — auto-escalate to human queue.
     if decision.chosen_action in RETRY_ACTIONS:
         prior_retries = Action.objects.filter(transaction=txn, action_type=Action.Type.RETRY).count()
         if prior_retries >= cfg["MAX_RETRIES"]:
@@ -66,7 +64,6 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
         else:
             _log(txn, "max_retry_attempts", GuardrailEvent.Result.PASSED, f"{prior_retries}/{cfg['MAX_RETRIES']} used")
 
-    # 3. Spend / action ceiling — route to escalation, not auto-execute.
     if txn.amount > cfg["SPEND_CEILING_INR"]:
         _log(
             txn, "spend_ceiling", GuardrailEvent.Result.BLOCKED,
@@ -76,11 +73,9 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     else:
         _log(txn, "spend_ceiling", GuardrailEvent.Result.PASSED, f"₹{txn.amount} within ceiling")
 
-    # From here on, escalation (never-act-blind rules) takes priority over hold/schedule rules.
     if escalate:
         return GuardrailVerdict(cleared=False, escalate=True, events=[])
 
-    # 4. Cooldown between retries — 48h for card declines, schedule don't act immediately.
     if decision.chosen_action in RETRY_ACTIONS and "card" in (txn.failure_code or "").lower():
         cooldown_until = now + timedelta(hours=cfg["RETRY_COOLDOWN_HOURS"])
         _log(
@@ -92,11 +87,6 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     else:
         _log(txn, "cooldown_between_retries", GuardrailEvent.Result.PASSED, "no card-decline cooldown applies")
 
-    # 5. Contact frequency cap — 1 nudge / 24h / customer, extended with a broken-promise
-    #    check: a customer who ghosted a prior promise-to-pay must not get a fresh nudge
-    #    on the strength of the cooldown timestamp alone — they're escalated to a human
-    #    instead. Still the same rule name (no seventh rule), just an extended check.
-    #    Locked to avoid a concurrent-task race between the cooldown check and its write.
     if decision.chosen_action in CONTACT_ACTIONS:
         has_broken_promise = PromiseToPay.objects.filter(
             transaction__customer_id=txn.customer_id, status=PromiseToPay.Status.BROKEN
@@ -127,7 +117,6 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     else:
         _log(txn, "contact_frequency_cap", GuardrailEvent.Result.PASSED, "not a contact action")
 
-    # 6. Compliance hours — no B2B contact outside business hours.
     if txn.kind == txn.Kind.RECEIVABLE and decision.chosen_action in CONTACT_ACTIONS:
         local_hour = timezone.localtime(now).hour
         start, end = cfg["BUSINESS_HOURS_START"], cfg["BUSINESS_HOURS_END"]
@@ -146,10 +135,6 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     else:
         _log(txn, "compliance_hours", GuardrailEvent.Result.PASSED, "not a B2B contact action")
 
-    # Rules 4-6 can now also escalate (the broken-promise check in rule 5) — check that
-    # before falling through to hold/cleared, same priority as the rules 1-3 early return
-    # above. Additive: rules 4-6 never set escalate before this change, so every scenario
-    # that didn't reach here still doesn't.
     if escalate:
         return GuardrailVerdict(cleared=False, escalate=True, events=[])
 

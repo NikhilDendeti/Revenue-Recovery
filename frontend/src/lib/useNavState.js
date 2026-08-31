@@ -1,11 +1,5 @@
 import { useEffect, useState } from "react";
 
-/* Chrome state shared by the desktop header and the mobile bottom nav.
- * No router: this is a single scrolling view, so "navigation" is section
- * anchors and one IntersectionObserver tracking which one is in view.
- */
-
-/** True once the page has scrolled past `offset` — drives the header solidifying. */
 export function useScrolled(offset = 24) {
   const [scrolled, setScrolled] = useState(false);
 
@@ -19,7 +13,6 @@ export function useScrolled(offset = 24) {
   return scrolled;
 }
 
-/** The id of the section currently occupying the middle of the viewport. */
 export function useActiveSection(ids) {
   const key = ids.join("|");
   const [active, setActive] = useState(ids[0]);
@@ -36,7 +29,6 @@ export function useActiveSection(ids) {
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         if (visible[0]) setActive(visible[0].target.id);
       },
-      // A band across the middle of the viewport: whichever section owns it wins.
       { rootMargin: "-40% 0px -50% 0px", threshold: 0 }
     );
 
@@ -47,7 +39,6 @@ export function useActiveSection(ids) {
   return active;
 }
 
-/** Scroll to a section, honouring the OS reduced-motion preference. */
 export function scrollToSection(id) {
   const el = document.getElementById(id);
   if (!el) return;

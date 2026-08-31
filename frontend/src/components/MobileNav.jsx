@@ -2,14 +2,6 @@ import Icon from "./ui/Icon";
 import { SECTIONS } from "../lib/sections";
 import { scrollToSection } from "../lib/useNavState";
 
-/* Touch navigation.
- *
- * A bottom bar rather than a hamburger drawer: navigation stays visible, the
- * targets sit where a thumb actually reaches, and the active section is
- * readable without opening anything. `<main>` carries matching bottom padding
- * (`pb-safe-nav`) so nothing ever hides underneath it.
- */
-
 export default function MobileNav({ activeSection }) {
   return (
     <nav

@@ -1,7 +1,3 @@
-/* The brand lockup: a red mark carrying the recovery loop, plus the wordmark.
- * Identical everywhere it appears — login, header, mobile nav.
- */
-
 const SIZES = {
   sm: { tile: "h-7 w-7 rounded-md", glyph: 16, text: "text-[0.9375rem]" },
   md: { tile: "h-9 w-9 rounded-lg", glyph: 20, text: "text-[1.0625rem]" },

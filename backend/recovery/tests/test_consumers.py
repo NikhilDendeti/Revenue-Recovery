@@ -7,11 +7,6 @@ from config.asgi import application
 from recovery import ws as ws_module
 
 pytestmark = pytest.mark.django_db(transaction=True)
-# transaction=True, not the default rolled-back transaction: the Channels auth
-# middleware resolves the user via database_sync_to_async, which runs on a separate
-# DB connection/thread — it can't see a user created inside the default test
-# transaction, since that transaction is never actually committed. Same root cause
-# and same fix as the concurrency test in test_guardrails.py.
 
 
 @pytest.fixture

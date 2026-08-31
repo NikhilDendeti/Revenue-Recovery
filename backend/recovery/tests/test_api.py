@@ -27,9 +27,6 @@ def _record(make_transaction):
     return txn
 
 
-# --- read endpoints ---
-
-
 def test_transaction_list(client, make_transaction):
     _record(make_transaction)
     resp = client.get("/api/transactions/")
@@ -68,9 +65,6 @@ def test_scheduled_actions_list_empty(client):
     resp = client.get("/api/scheduled-actions/")
     assert resp.status_code == 200
     assert resp.json()["count"] == 0
-
-
-# --- promises-to-pay: read-only ---
 
 
 def test_promises_to_pay_list_and_filter_by_status_and_transaction(client, make_transaction):
@@ -125,9 +119,6 @@ def test_promises_to_pay_write_methods_are_rejected(client, make_transaction, me
     assert promise.status == PromiseToPay.Status.PENDING
 
 
-# --- audit log: read-only ---
-
-
 def test_audit_log_list_and_retrieve(client, make_transaction):
     txn = _record(make_transaction)
     entry = AuditLogEntry.objects.get(transaction=txn)
@@ -156,9 +147,6 @@ def test_audit_log_write_methods_are_rejected(client, make_transaction, method):
     assert AuditLogEntry.objects.count() == before_count
     entry.refresh_from_db()
     assert entry.event_type == "detected"
-
-
-# --- batch replay + webhook ingestion ---
 
 
 def test_batch_replay_trigger_is_accepted(client, make_transaction):
@@ -218,9 +206,6 @@ def test_webhook_checkout_abandoned_creates_dropoff_transaction(client):
     assert txn.failure_code == ""
     assert txn.last_payment_method == "upi"
     assert txn.checkout_initiated_at is not None
-
-
-# --- authentication ---
 
 
 class TestAuthentication:

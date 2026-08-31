@@ -5,14 +5,6 @@ import EmptyState from "./ui/EmptyState";
 import { StatusBadge } from "./ui/Badge";
 import { inr, kindMeta, statusMeta, tone } from "../lib/format";
 
-/* Panel 3 — the click-through audit trail.
- *
- * A table on wide viewports, a stacked card list below `md`. Only one of the
- * two is ever rendered (`display: none` elements aren't focusable), so there
- * are no duplicate tab stops — and a phone never gets a sideways-scrolling
- * table, which was the worst responsive defect in the previous UI.
- */
-
 const COLUMNS = ["Flow", "Customer", "Amount", "Status"];
 
 function rowLabel(t) {
@@ -82,7 +74,6 @@ export default function AuditTrail({
   } else {
     body = (
       <>
-        {/* Wide viewports: table */}
         <table className="hidden w-full border-collapse text-meta md:table">
           <caption className="sr-only">
             Transactions in this recovery batch. Select a row to open its reasoning chain.
@@ -133,9 +124,6 @@ export default function AuditTrail({
                     <StatusBadge status={t.status} />
                   </td>
                   <td className="px-2 py-3">
-                    {/* The row's onClick is a mouse convenience; this is the real
-                        control, so the table keeps its row/cell semantics and the
-                        keyboard still has one stop per transaction. */}
                     <button
                       type="button"
                       aria-label={rowLabel(t)}
@@ -158,7 +146,6 @@ export default function AuditTrail({
           </tbody>
         </table>
 
-        {/* Narrow viewports: stacked cards, read top to bottom */}
         <ul className="space-y-2 p-3 md:hidden">
           {transactions.map((t) => {
             const kind = kindMeta(t.kind);

@@ -6,9 +6,6 @@ and until now it had no test that touched its boundaries, because the draw and t
 were fused into a single expression with no seam between them.
 """
 
-# The outcome is never treated as certain in either direction: a perfect diagnosis still
-# leaves a 5% chance the customer simply doesn't pay, and a hopeless one still leaves a 5%
-# chance they do. These are the clamp bounds lifted verbatim from the original expression.
 OUTCOME_FLOOR = 0.05
 OUTCOME_CEILING = 0.95
 

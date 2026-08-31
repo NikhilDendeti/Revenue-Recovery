@@ -36,7 +36,6 @@ from ..dtos import (
 
 
 class StorageInterface(ABC):
-    # --- transactions -----------------------------------------------------------
     @abstractmethod
     def get_transaction(self, transaction_id: str) -> TransactionDTO:
         """Raises TransactionNotFound."""
@@ -60,7 +59,6 @@ class StorageInterface(ABC):
     def open_transaction_ids(self) -> list[str]:
         """Every `open` transaction, oldest first — the replay batch's work list."""
 
-    # --- pipeline records -------------------------------------------------------
     @abstractmethod
     def record_diagnosis(self, transaction_id: str, diagnosis: DiagnosisDTO) -> DiagnosisDTO:
         ...
@@ -82,13 +80,11 @@ class StorageInterface(ABC):
     def latest_diagnosis_confidence(self, transaction_id: str, default: float = 0.5) -> float:
         ...
 
-    # --- audit (append-only: no update, no delete, by design) -------------------
     @abstractmethod
     def append_audit(self, transaction_id: str, *, event_type: str, actor: str,
                      payload: dict) -> AuditEntryDTO:
         ...
 
-    # --- guardrail state --------------------------------------------------------
     @abstractmethod
     def count_prior_retries(self, transaction_id: str) -> int:
         ...
@@ -106,7 +102,6 @@ class StorageInterface(ABC):
         inside one transaction under one row lock. Splitting these would let a crash
         between them consume a slot with no audit-visible reason."""
 
-    # --- scheduling -------------------------------------------------------------
     @abstractmethod
     def upsert_pending_scheduled_action(self, transaction_id: str, *, action_type: str,
                                         reason: str, run_after: datetime) -> None:
@@ -124,7 +119,6 @@ class StorageInterface(ABC):
     def get_scheduled_action(self, scheduled_action_id: int) -> ScheduledActionDTO | None:
         ...
 
-    # --- read model -------------------------------------------------------------
     @abstractmethod
     def get_summary(self) -> SummaryDTO:
         ...

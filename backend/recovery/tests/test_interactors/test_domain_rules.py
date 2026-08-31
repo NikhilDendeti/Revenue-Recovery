@@ -12,13 +12,13 @@ from ...domain_rules import OUTCOME_CEILING, OUTCOME_FLOOR, recovery_probability
 
 
 @pytest.mark.parametrize("confidence,expected", [
-    (0.0, OUTCOME_FLOOR),      # a hopeless diagnosis still gets the floor
+    (0.0, OUTCOME_FLOOR),
     (0.03, OUTCOME_FLOOR),
     (0.05, OUTCOME_FLOOR),
-    (0.42, 0.42),              # inside the band, passed straight through
+    (0.42, 0.42),
     (0.82, 0.82),
     (0.95, OUTCOME_CEILING),
-    (1.0, OUTCOME_CEILING),    # a certain diagnosis is still not a certain payment
+    (1.0, OUTCOME_CEILING),
 ])
 def test_the_clamp_bounds_the_probability(confidence, expected):
     assert recovery_probability(confidence) == pytest.approx(expected)

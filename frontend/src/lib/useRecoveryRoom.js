@@ -5,8 +5,6 @@ import { wsUrl } from "./config";
 
 const MAX_FEED = 120;
 
-// Monotonic across the session. `prev.length` freezes once the feed is clamped to
-// MAX_FEED, which would then hand React duplicate keys for every later event.
 let feedSeq = 0;
 
 export function useRecoveryRoom() {
@@ -15,9 +13,6 @@ export function useRecoveryRoom() {
   const [guardrails, setGuardrails] = useState([]);
   const [voiceMoment, setVoiceMoment] = useState(null);
   const [connected, setConnected] = useState(false);
-  // Additive: the summary fetch used to swallow every rejection, so a backend
-  // that was down looked identical to one with no data. Callers that don't
-  // destructure `error` are unaffected.
   const [error, setError] = useState(null);
   const wsRef = useRef(null);
 
@@ -34,10 +29,6 @@ export function useRecoveryRoom() {
   useEffect(() => {
     refreshSummary();
 
-    // The browser WebSocket API can't set an Authorization header, so the access
-    // token travels as a query param — see recovery/auth_middleware.py. Grabbed once
-    // at connect time; a token that expires mid-connection isn't refreshed (the
-    // connection stays open regardless — see design.md's WS non-goals).
     const token = getAccessToken();
     const ws = new WebSocket(wsUrl(`/ws/recovery/?token=${encodeURIComponent(token || "")}`));
     wsRef.current = ws;
@@ -50,7 +41,7 @@ export function useRecoveryRoom() {
       try {
         msg = JSON.parse(evt.data);
       } catch {
-        return; // a malformed frame shouldn't take the handler down
+        return;
       }
       if (msg.type === "ticker") {
         setSummary(msg.payload.summary);
@@ -70,9 +61,6 @@ export function useRecoveryRoom() {
       } else if (msg.type === "voice") {
         setVoiceMoment(msg.payload);
       }
-      // 'audit' events aren't separately buffered here — the Audit Trail panel always
-      // reads the full chain fresh via GET /transactions/:id/chain/ on click, which is
-      // the source of truth; WS just drives the live feel of the other two panels.
     };
 
     return () => ws.close();

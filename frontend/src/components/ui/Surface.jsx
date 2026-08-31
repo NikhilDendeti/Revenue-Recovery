@@ -1,10 +1,5 @@
 import Icon from "./Icon";
 
-/* Surfaces: the two container shapes the whole app is built from.
- * `Panel` is a titled region (ticker, console, audit trail).
- * `Card` is a plain elevated block (KPI tiles, chain sections, empty states).
- */
-
 export function Card({ as: Tag = "div", elevated = false, interactive = false, className = "", children, ...rest }) {
   return (
     <Tag

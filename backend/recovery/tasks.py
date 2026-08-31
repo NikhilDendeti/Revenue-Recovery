@@ -34,9 +34,6 @@ DECISION_TO_ACTION_CHANNEL = {
     Decision.Action.ESCALATE: Action.Type.ESCALATE,
 }
 
-# Actions whose Razorpay call targets a specific pre-existing artifact (an order to
-# re-open, an invoice to re-notify). If that artifact 404s — the seed_data gap, or any
-# stale id — we can recover by issuing a fresh payment link instead of escalating.
 _FALLBACK_ACTIONS = {Decision.Action.RETRY_ORDER, Decision.Action.INVOICE_REMINDER}
 
 
@@ -81,10 +78,6 @@ def _call_razorpay(txn, action_type) -> dict:
     if action_type == Decision.Action.NEW_PAYMENT_LINK:
         return razorpay_client.create_payment_link(amount_paise, label, txn.customer_name, txn.customer_phone)
     if action_type == Decision.Action.REGISTRATION_LINK:
-        # The registration call itself requests amount 0 (Razorpay's e-mandate
-        # requirement — see razorpay_client.create_registration_link); the real due
-        # amount is folded into the description text instead so the customer's
-        # registration-link page still shows what's owed.
         registration_description = f"{label} — {txn.currency} {txn.amount} due"
         return razorpay_client.create_registration_link(
             amount_paise, registration_description, txn.customer_name, txn.customer_phone, txn.customer_email
@@ -136,8 +129,6 @@ def _escalate_on_unexpected_error(txn, err) -> Action:
 
 def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
     if action_type == Decision.Action.ESCALATE:
-        # ESCALATE's _call_razorpay returns a static dict and never hits the network,
-        # so it can't raise — no guard needed here.
         return _escalate(
             txn,
             reason="guardrail escalation or low-confidence decision",
@@ -150,9 +141,6 @@ def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
     try:
         api_response = _call_razorpay(txn, action_type)
     except razorpay_client.RazorpayError as err:
-        # A 404 on retry_order/invoice_reminder means the stored order/invoice id doesn't
-        # exist at Razorpay (the seed_data gap, or any stale id) — recover by issuing a
-        # fresh payment link. Any other API error has no safe fallback: escalate.
         if razorpay_client.is_not_found(err) and action_type in _FALLBACK_ACTIONS:
             try:
                 api_response = razorpay_client.create_payment_link(
@@ -160,7 +148,7 @@ def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
                 )
             except razorpay_client.RazorpayError as fallback_err:
                 return _escalate_api_failure(txn, action_type, fallback_err)
-            channel = Action.Type.EMAIL  # a payment link is a contact-channel artifact, not a same-order retry
+            channel = Action.Type.EMAIL
             fallback_note = {
                 "fallback_from": action_type,
                 "reason": "original payable artifact not found (404) — issued a fresh payment link instead",
@@ -172,11 +160,6 @@ def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
     if fallback_note is not None:
         api_response = {**api_response, "_recoverai_fallback": fallback_note}
 
-    # Synthetic outcome model: a payable artifact was created (order / link / invoice)
-    # but nothing forces the customer to pay it — there's no real customer in a batch
-    # replay. We resolve the outcome probabilistically, weighted by diagnosis
-    # confidence, so the ticker's ₹ recovered number is an honest function of the
-    # synthetic dataset's designed distribution, not a hard-coded demo path.
     recovered = random.random() < min(0.95, max(0.05, diagnosis_confidence))
     result = Action.Result.SUCCESS if recovered else Action.Result.FAILED
     amount_recovered = txn.amount if recovered else 0
@@ -215,18 +198,8 @@ def _advance_mandate_sequence(txn, action):
         return
 
     if action.result != Action.Result.FAILED or sequence.current_step >= 2:
-        # Step 2 is always `escalate` (caught by the branch above, whose outcome is
-        # never a dice roll — _execute_action special-cases ESCALATE before it ever
-        # reaches the SUCCESS/FAILED draw), so a FAILED nudge outcome at current_step
-        # >= 2 cannot occur in practice. Defensive no-op rather than an assertion, so a
-        # future step-count change fails soft.
         return
 
-    # The nudge was ignored (FAILED) and a further step remains — re-open the
-    # transaction and chain the next step as a ScheduledAction row (the same
-    # DB-backed, Beat-swept pattern sweep_scheduled_actions already sweeps for
-    # cooldown/retry), never a raw multi-day Celery ETA task, so the cadence survives
-    # a worker restart.
     next_step = sequence.current_step + 1
     if next_step == 1:
         next_action_type = Decision.Action.VOICE_REMINDER
@@ -275,8 +248,6 @@ def _dispatch_mandate_sequence_step(scheduled, txn):
         return
 
     if sequence is None:
-        # Defensive: a mandate_sequence_step row should never exist without an owning
-        # sequence — fail soft rather than crash the sweep.
         logger.warning("_dispatch_mandate_sequence_step: no MandateSequence for txn %s", txn.id)
         return
 
@@ -330,10 +301,6 @@ def _dispatch_mandate_sequence_step(scheduled, txn):
         return
 
     if not verdict.cleared:
-        # A held step re-schedules another mandate_sequence_step row rather than
-        # falling through to the plain generic dispatch branch, so this exact step's
-        # guardrail re-evaluation is never skipped, even across an internal hold.
-        # current_step is deliberately NOT advanced here — the same step retries.
         ScheduledAction.objects.update_or_create(
             transaction=txn,
             status=ScheduledAction.Status.PENDING,
@@ -361,7 +328,7 @@ def process_transaction_event(transaction_id):
         return
 
     if txn.status != Transaction.Status.OPEN:
-        return  # idempotency guard — a duplicate webhook/dispatch must not reprocess
+        return
 
     txn.status = Transaction.Status.PROCESSING
     txn.save(update_fields=["status", "updated_at"])
@@ -373,9 +340,6 @@ def process_transaction_event(transaction_id):
     try:
         _run_recovery_pipeline(txn)
     except Exception as err:
-        # Safety net: an unexpected failure (not the Razorpay-failure path, which
-        # _execute_action already resolves) must never leave the transaction wedged in
-        # PROCESSING — the idempotency guard above would then block it forever.
         logger.exception("process_transaction_event: pipeline failed for %s", txn.id)
         _escalate_on_unexpected_error(txn, err)
 
@@ -388,9 +352,6 @@ def _run_recovery_pipeline(txn):
             "currency": txn.currency,
             "failure_code": txn.failure_code,
             "customer_id": txn.customer_id,
-            # checkout_dropoff-only signals (design.md Decision 5 of
-            # add-checkout-dropoff-recovery) — harmless/unused for the other three kinds,
-            # which never populate either field.
             "checkout_initiated_at": txn.checkout_initiated_at.isoformat() if txn.checkout_initiated_at else None,
             "last_payment_method": txn.last_payment_method or "",
         }
@@ -433,13 +394,6 @@ def _run_recovery_pipeline(txn):
         _execute_action(txn, Decision.Action.ESCALATE, diagnosis.confidence)
         return
 
-    # A subscription_failure transaction whose decision resolved to registration_link
-    # (retriable, and didn't immediately escalate at the guardrail level above) starts
-    # its mandate-recovery cadence tracker here — before the held/cleared branch below,
-    # since both paths still eventually attempt this same step-0 nudge
-    # (add-mandate-recovery-sequence). Created once: process_transaction_event's
-    # idempotency guard ensures _run_recovery_pipeline only ever runs once per
-    # transaction.
     if txn.kind == Transaction.Kind.SUBSCRIPTION_FAILURE and decision.chosen_action == Decision.Action.REGISTRATION_LINK:
         MandateSequence.objects.create(transaction=txn, current_step=0, status=MandateSequence.Status.ACTIVE)
 
@@ -486,8 +440,6 @@ def dispatch_scheduled_action(scheduled_action_id):
     txn = scheduled.transaction
 
     if scheduled.reason == "mandate_sequence_step":
-        # A chained mandate-recovery cadence step (add-mandate-recovery-sequence) needs
-        # its own guardrail re-evaluation, not the plain direct-execute body below.
         _dispatch_mandate_sequence_step(scheduled, txn)
         return
 
@@ -504,8 +456,6 @@ def dispatch_scheduled_action(scheduled_action_id):
         action = _execute_action(txn, scheduled.action_type, confidence)
         _advance_mandate_sequence(txn, action)
     except Exception as err:
-        # Same safety net as process_transaction_event: a delayed action that fails
-        # unexpectedly must resolve the transaction, not leave it mid-execution.
         logger.exception("dispatch_scheduled_action: execution failed for %s", txn.id)
         _escalate_on_unexpected_error(txn, err)
 
@@ -542,7 +492,7 @@ def sweep_promises_to_pay():
         )
 
         if txn.status == Transaction.Status.ESCALATED:
-            continue  # already in the human queue — avoid a no-op re-escalation
+            continue
 
         try:
             diagnosis = txn.diagnoses.latest("agent_run_at")
@@ -594,10 +544,6 @@ def trigger_voice_showcase(transaction_id):
         api_response={"simulated": True, "transcript": transcript, "customer_response": customer_response},
         result=Action.Result.SIMULATED,
     )
-    # A real, trackable commitment — not only prose inside the audit entry below.
-    # update_or_create (not create) so re-triggering the showcase for the same
-    # transaction replaces the pending promise instead of tripping the partial
-    # unique constraint (one pending PromiseToPay per transaction).
     PromiseToPay.objects.update_or_create(
         transaction=txn,
         status=PromiseToPay.Status.PENDING,

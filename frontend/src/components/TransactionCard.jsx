@@ -2,13 +2,6 @@ import Icon from "./ui/Icon";
 import { StatusBadge } from "./ui/Badge";
 import { inr, kindMeta, statusMeta, tone } from "../lib/format";
 
-/* The poster card.
- *
- * The whole card is one button, so everything the desktop hover reveals is
- * also reachable with a tap or the Enter key — the reveal is emphasis, never
- * the only route to something.
- */
-
 export default function TransactionCard({ transaction, selected = false, onSelect }) {
   const status = statusMeta(transaction.status);
   const kind = kindMeta(transaction.kind);
@@ -26,7 +19,6 @@ export default function TransactionCard({ transaction, selected = false, onSelec
         hover:-translate-y-1 hover:shadow-lift sm:w-68
         ${selected ? "border-brand shadow-glow" : "border-hairline hover:border-hairline-strong"}`}
     >
-      {/* Poster */}
       <div className={`relative h-32 overflow-hidden ${t.bg}`}>
         <span
           aria-hidden="true"
@@ -49,7 +41,6 @@ export default function TransactionCard({ transaction, selected = false, onSelec
           {inr(transaction.amount)}
         </p>
 
-        {/* Hover emphasis — a visual affordance, not a nested control. */}
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 flex items-end justify-center bg-void/55 pb-4 opacity-0
@@ -62,7 +53,6 @@ export default function TransactionCard({ transaction, selected = false, onSelec
         </span>
       </div>
 
-      {/* Body */}
       <div className="border-t border-hairline bg-surface-2 p-3.5">
         <p className="truncate text-meta font-semibold text-fg">{customer}</p>
         <div className="mt-2 flex items-center gap-2">
@@ -78,7 +68,6 @@ export default function TransactionCard({ transaction, selected = false, onSelec
         </div>
       </div>
 
-      {/* In-flight indicator */}
       {transaction.status === "processing" && (
         <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-surface-3">
           <span className="shimmer block h-full w-full bg-info/40" />

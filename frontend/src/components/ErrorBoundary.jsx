@@ -3,10 +3,6 @@ import Button from "./ui/Button";
 import Icon from "./ui/Icon";
 import Wordmark from "./ui/Wordmark";
 
-/* Last line of defence: a render error shows a designed screen with a way out,
- * instead of a blank page.
- */
-
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -18,8 +14,6 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    // Nothing to report to — surfacing it in the console is the useful thing
-    // an operator or a judge can actually act on.
     console.error("Recovery Room crashed:", error, info?.componentStack);
   }
 
