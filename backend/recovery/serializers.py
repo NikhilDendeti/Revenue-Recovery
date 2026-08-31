@@ -6,6 +6,7 @@ from .models import (
     Decision,
     Diagnosis,
     GuardrailEvent,
+    PromiseToPay,
     ScheduledAction,
     Transaction,
 )
@@ -39,6 +40,12 @@ class ScheduledActionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScheduledAction
         fields = ["id", "action_type", "reason", "run_after", "status", "created_at"]
+
+
+class PromiseToPaySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PromiseToPay
+        fields = ["id", "transaction", "promised_amount", "promise_date", "source", "status", "created_at"]
 
 
 class AuditLogEntrySerializer(serializers.ModelSerializer):

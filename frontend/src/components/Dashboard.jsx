@@ -9,6 +9,7 @@ import ContentRow from "./ContentRow";
 import TransactionCard from "./TransactionCard";
 import RecoveryTicker from "./RecoveryTicker";
 import GuardrailConsole from "./GuardrailConsole";
+import PromiseTracker from "./PromiseTracker";
 import AuditTrail from "./AuditTrail";
 import ChainDrawer from "./ChainDrawer";
 import Skeleton from "./ui/Skeleton";
@@ -282,6 +283,9 @@ export default function Dashboard({ onLogout }) {
             <div className="mx-auto grid w-full max-w-[110rem] gap-4 px-5 sm:px-8 lg:grid-cols-2 lg:px-10">
               <RecoveryTicker ticks={ticks} onSelect={setSelectedId} connected={connected} />
               <GuardrailConsole events={guardrails} onSelect={setSelectedId} />
+            </div>
+            <div className="mx-auto w-full max-w-[110rem] px-5 sm:px-8 lg:px-10">
+              <PromiseTracker />
             </div>
           </section>
 

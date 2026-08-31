@@ -10,13 +10,14 @@ from agents.pipeline import run_pipeline
 
 from . import razorpay_client, ws
 from .analytics import compute_summary
-from .guardrails import evaluate_guardrails
+from .guardrails import CONTACT_ACTIONS, evaluate_guardrails
 from .models import (
     Action,
     AuditLogEntry,
     Decision,
     Diagnosis,
     GuardrailEvent,
+    PromiseToPay,
     ScheduledAction,
     Transaction,
 )
@@ -318,6 +319,58 @@ def dispatch_scheduled_action(scheduled_action_id):
 
 
 @shared_task
+def sweep_promises_to_pay():
+    """Celery Beat, every 30s — the same 'row + periodic sweeper' shape as
+    sweep_scheduled_actions, not a raw multi-day ETA task. For every pending promise
+    whose promise_date has passed: kept if the transaction recovered, otherwise broken —
+    and a broken promise re-runs guardrail evaluation so the existing decision/
+    escalation machinery, not this sweep, resolves the consequence."""
+    due = PromiseToPay.objects.filter(
+        status=PromiseToPay.Status.PENDING, promise_date__lte=timezone.localdate()
+    ).select_related("transaction")
+    kept = broken = 0
+    for promise in due:
+        txn = promise.transaction
+        if txn.status == Transaction.Status.RECOVERED:
+            promise.status = PromiseToPay.Status.KEPT
+            promise.save(update_fields=["status"])
+            kept += 1
+            continue
+
+        promise.status = PromiseToPay.Status.BROKEN
+        promise.save(update_fields=["status"])
+        broken += 1
+        _audit(
+            txn, "promise_broken", AuditLogEntry.Actor.SYSTEM,
+            {
+                "promise_id": promise.id,
+                "promise_date": promise.promise_date.isoformat(),
+                "promised_amount": float(promise.promised_amount),
+            },
+        )
+
+        if txn.status == Transaction.Status.ESCALATED:
+            continue  # already in the human queue — avoid a no-op re-escalation
+
+        try:
+            diagnosis = txn.diagnoses.latest("agent_run_at")
+        except Diagnosis.DoesNotExist:
+            diagnosis = Diagnosis(confidence=0.5)
+
+        latest_decision = txn.decisions.order_by("-decided_at").first()
+        if latest_decision is not None and latest_decision.chosen_action in CONTACT_ACTIONS:
+            decision = latest_decision
+        else:
+            decision = Decision(chosen_action=Decision.Action.VOICE_REMINDER)
+
+        verdict = evaluate_guardrails(txn, diagnosis, decision)
+        if verdict.escalate:
+            _execute_action(txn, Decision.Action.ESCALATE, diagnosis.confidence)
+
+    return {"kept": kept, "broken": broken}
+
+
+@shared_task
 def replay_batch():
     """Walks every OPEN transaction and staggers its processing so the Recovery Room
     ticker climbs transaction-by-transaction instead of jumping straight to a final
@@ -340,13 +393,27 @@ def trigger_voice_showcase(transaction_id):
     txn = Transaction.objects.get(id=transaction_id)
     transcript = f"Namaste, aapka invoice ₹{txn.amount:,.0f} ka due hai, kya hum abhi payment link bhej sakte hain?"
     customer_response = "Haan bhej dijiye, main 3 din mein pay kar dunga."
-    promise_date = (timezone.now() + timedelta(days=3)).date().isoformat()
+    promise_date_obj = (timezone.now() + timedelta(days=3)).date()
+    promise_date = promise_date_obj.isoformat()
 
     Action.objects.create(
         transaction=txn,
         action_type=Action.Type.VOICE,
         api_response={"simulated": True, "transcript": transcript, "customer_response": customer_response},
         result=Action.Result.SIMULATED,
+    )
+    # A real, trackable commitment — not only prose inside the audit entry below.
+    # update_or_create (not create) so re-triggering the showcase for the same
+    # transaction replaces the pending promise instead of tripping the partial
+    # unique constraint (one pending PromiseToPay per transaction).
+    PromiseToPay.objects.update_or_create(
+        transaction=txn,
+        status=PromiseToPay.Status.PENDING,
+        defaults={
+            "promised_amount": txn.amount,
+            "promise_date": promise_date_obj,
+            "source": PromiseToPay.Source.VOICE,
+        },
     )
     _audit(
         txn, "voice_promise_to_pay", AuditLogEntry.Actor.AGENT,

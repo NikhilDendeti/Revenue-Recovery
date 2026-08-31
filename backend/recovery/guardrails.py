@@ -11,7 +11,7 @@ from django.conf import settings
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
-from .models import Action, ContactCooldown, Decision, GuardrailEvent
+from .models import Action, ContactCooldown, Decision, GuardrailEvent, PromiseToPay
 
 CONTACT_ACTIONS = {
     Decision.Action.NEW_PAYMENT_LINK,
@@ -92,25 +92,38 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
     else:
         _log(txn, "cooldown_between_retries", GuardrailEvent.Result.PASSED, "no card-decline cooldown applies")
 
-    # 5. Contact frequency cap — 1 nudge / 24h / customer. Locked to avoid a
-    #    concurrent-task race between the check and the write.
+    # 5. Contact frequency cap — 1 nudge / 24h / customer, extended with a broken-promise
+    #    check: a customer who ghosted a prior promise-to-pay must not get a fresh nudge
+    #    on the strength of the cooldown timestamp alone — they're escalated to a human
+    #    instead. Still the same rule name (no seventh rule), just an extended check.
+    #    Locked to avoid a concurrent-task race between the cooldown check and its write.
     if decision.chosen_action in CONTACT_ACTIONS:
-        with db_transaction.atomic():
-            cooldown, _ = ContactCooldown.objects.select_for_update().get_or_create(
-                customer_id=txn.customer_id, defaults={"last_contacted_at": now - timedelta(days=2)}
+        has_broken_promise = PromiseToPay.objects.filter(
+            transaction__customer_id=txn.customer_id, status=PromiseToPay.Status.BROKEN
+        ).exists()
+        if has_broken_promise:
+            _log(
+                txn, "contact_frequency_cap", GuardrailEvent.Result.BLOCKED,
+                "customer has an unresolved broken promise-to-pay — escalating instead of a fresh nudge",
             )
-            next_allowed = cooldown.last_contacted_at + timedelta(hours=cfg["CONTACT_COOLDOWN_HOURS"])
-            if next_allowed > now:
-                _log(
-                    txn, "contact_frequency_cap", GuardrailEvent.Result.BLOCKED,
-                    f"last contacted {cooldown.last_contacted_at.isoformat()} — next allowed {next_allowed.isoformat()}",
+            escalate = True
+        else:
+            with db_transaction.atomic():
+                cooldown, _ = ContactCooldown.objects.select_for_update().get_or_create(
+                    customer_id=txn.customer_id, defaults={"last_contacted_at": now - timedelta(days=2)}
                 )
-                hold_until = max(hold_until, next_allowed) if hold_until else next_allowed
-                hold_reason = "contact_frequency_cap"
-            else:
-                _log(txn, "contact_frequency_cap", GuardrailEvent.Result.PASSED, "outside 24h cooldown")
-                cooldown.last_contacted_at = now
-                cooldown.save(update_fields=["last_contacted_at"])
+                next_allowed = cooldown.last_contacted_at + timedelta(hours=cfg["CONTACT_COOLDOWN_HOURS"])
+                if next_allowed > now:
+                    _log(
+                        txn, "contact_frequency_cap", GuardrailEvent.Result.BLOCKED,
+                        f"last contacted {cooldown.last_contacted_at.isoformat()} — next allowed {next_allowed.isoformat()}",
+                    )
+                    hold_until = max(hold_until, next_allowed) if hold_until else next_allowed
+                    hold_reason = "contact_frequency_cap"
+                else:
+                    _log(txn, "contact_frequency_cap", GuardrailEvent.Result.PASSED, "outside 24h cooldown")
+                    cooldown.last_contacted_at = now
+                    cooldown.save(update_fields=["last_contacted_at"])
     else:
         _log(txn, "contact_frequency_cap", GuardrailEvent.Result.PASSED, "not a contact action")
 
@@ -132,6 +145,13 @@ def evaluate_guardrails(txn, diagnosis, decision) -> GuardrailVerdict:
             _log(txn, "compliance_hours", GuardrailEvent.Result.PASSED, f"within business hours ({local_hour}:00)")
     else:
         _log(txn, "compliance_hours", GuardrailEvent.Result.PASSED, "not a B2B contact action")
+
+    # Rules 4-6 can now also escalate (the broken-promise check in rule 5) — check that
+    # before falling through to hold/cleared, same priority as the rules 1-3 early return
+    # above. Additive: rules 4-6 never set escalate before this change, so every scenario
+    # that didn't reach here still doesn't.
+    if escalate:
+        return GuardrailVerdict(cleared=False, escalate=True, events=[])
 
     if hold_until:
         return GuardrailVerdict(cleared=False, escalate=False, hold_until=hold_until, hold_reason=hold_reason)

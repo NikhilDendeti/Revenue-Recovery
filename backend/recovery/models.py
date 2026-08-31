@@ -101,6 +101,40 @@ class ScheduledAction(models.Model):
         ]
 
 
+class PromiseToPay(models.Model):
+    """A customer's committed payment date, elicited during a recovery attempt (the
+    voice channel today; a manual B2B follow-up in future). Modeled as a row + a
+    periodic Beat sweeper (recovery.tasks.sweep_promises_to_pay), the same
+    "row + sweep" shape as ScheduledAction, rather than living only as unstructured
+    audit-log payload text."""
+
+    class Source(models.TextChoices):
+        VOICE = "voice", "Voice"
+        MANUAL = "manual", "Manual"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        KEPT = "kept", "Kept"
+        BROKEN = "broken", "Broken"
+
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="promises")
+    promised_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    promise_date = models.DateField()
+    source = models.CharField(max_length=16, choices=Source.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["transaction"],
+                condition=models.Q(status="pending"),
+                name="one_pending_promise_to_pay_per_txn",
+            )
+        ]
+
+
 class Action(models.Model):
     class Type(models.TextChoices):
         RETRY = "retry", "Retry"

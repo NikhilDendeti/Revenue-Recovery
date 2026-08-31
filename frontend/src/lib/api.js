@@ -38,6 +38,7 @@ export const api = {
   transactions: (params = "") => req(`/transactions/${params}`),
   transactionChain: (id) => req(`/transactions/${id}/chain/`),
   auditLog: (params = "") => req(`/audit-log/${params}`),
+  promisesToPay: (params = "") => req(`/promises-to-pay/${params}`),
   replayBatch: () => req("/batch/replay/", { method: "POST", body: "{}" }),
   voiceShowcase: (id) => req(`/transactions/${id}/voice-showcase/`, { method: "POST", body: "{}" }),
 };

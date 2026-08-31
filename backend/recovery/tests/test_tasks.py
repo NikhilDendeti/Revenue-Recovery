@@ -11,6 +11,7 @@ from recovery.models import (
     Decision,
     Diagnosis,
     GuardrailEvent,
+    PromiseToPay,
     ScheduledAction,
     Transaction,
 )
@@ -68,6 +69,29 @@ def test_process_transaction_event_escalated_on_low_confidence(make_transaction)
     assert ScheduledAction.objects.filter(transaction=txn).count() == 0
 
 
+def test_process_transaction_event_escalates_on_unrecognized_payment_degradation_code(make_transaction):
+    """design.md Decision 5 (fix-diagnosis-razorpay-failure-codes): a payment_degradation
+    transaction with a wholly unrecognized failure code now resolves via
+    _KIND_DEFAULTS["payment_degradation"]'s confidence of 0.55 — strictly below the
+    guardrail confidence floor — so it must escalate rather than auto-act."""
+    txn = make_transaction(
+        kind=Transaction.Kind.PAYMENT_DEGRADATION,
+        failure_code="totally_unrecognized_code",
+        amount=500,
+        customer_id="cust_unrecognized_code",
+    )
+    with patch("agents.pipeline.complete_json", return_value=None):
+        process_transaction_event(str(txn.id))
+
+    txn.refresh_from_db()
+    assert txn.status == Transaction.Status.ESCALATED
+    diagnosis = Diagnosis.objects.get(transaction=txn)
+    assert diagnosis.root_cause == "payment_declined"
+    assert diagnosis.confidence == 0.55
+    action = Action.objects.get(transaction=txn)
+    assert action.action_type == Action.Type.ESCALATE
+
+
 def test_process_transaction_event_is_idempotent_against_double_dispatch(make_transaction):
     txn = make_transaction(failure_code="insufficient_funds", amount=500, customer_id="cust_idempotent")
     process_transaction_event(str(txn.id))
@@ -120,6 +144,25 @@ def test_trigger_voice_showcase_creates_action_and_promise_to_pay(make_transacti
     assert "79,713" in action.api_response["transcript"]
     entry = AuditLogEntry.objects.get(transaction=txn, event_type="voice_promise_to_pay")
     assert entry.payload["promise_to_pay_date"] == result["promise_to_pay_date"]
+    # A real, trackable PromiseToPay row now exists alongside the audit-log prose —
+    # independently retrievable, not just text inside the audit payload.
+    promise = PromiseToPay.objects.get(transaction=txn)
+    assert promise.status == PromiseToPay.Status.PENDING
+    assert promise.source == PromiseToPay.Source.VOICE
+    assert promise.promised_amount == txn.amount
+    assert promise.promise_date.isoformat() == result["promise_to_pay_date"]
+
+
+def test_trigger_voice_showcase_twice_replaces_pending_promise_not_duplicates(make_transaction):
+    """The showcase button has no guard against repeat clicks — update_or_create must
+    replace the pending promise rather than tripping the partial unique constraint."""
+    txn = make_transaction(kind=Transaction.Kind.RECEIVABLE, amount=1000, failure_code="invoice_overdue")
+
+    trigger_voice_showcase(str(txn.id))
+    trigger_voice_showcase(str(txn.id))
+
+    assert PromiseToPay.objects.filter(transaction=txn).count() == 1
+    assert PromiseToPay.objects.get(transaction=txn).status == PromiseToPay.Status.PENDING
 
 
 def test_guardrail_events_are_logged_for_every_processed_transaction(make_transaction):

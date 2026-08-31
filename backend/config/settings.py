@@ -187,6 +187,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "recovery.tasks.sweep_scheduled_actions",
         "schedule": 30.0,  # seconds — demo-friendly cadence; real cooldowns are hours/days out
     },
+    "sweep-promises-to-pay": {
+        "task": "recovery.tasks.sweep_promises_to_pay",
+        "schedule": 30.0,  # same cadence as the scheduled-action sweep, for the same reason
+    },
 }
 
 # --- RecoverAI: LLM (optional) ---

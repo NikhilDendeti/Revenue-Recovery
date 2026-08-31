@@ -1,6 +1,6 @@
 from django.db.models import Sum
 
-from .models import Action, Transaction
+from .models import Action, PromiseToPay, Transaction
 
 
 def compute_summary() -> dict:
@@ -18,6 +18,11 @@ def compute_summary() -> dict:
     ).count()
     recovery_rate = (recovered_count / processed_count * 100) if processed_count else 0.0
 
+    promises_kept = PromiseToPay.objects.filter(status=PromiseToPay.Status.KEPT).count()
+    promises_broken = PromiseToPay.objects.filter(status=PromiseToPay.Status.BROKEN).count()
+    promises_resolved = promises_kept + promises_broken
+    promise_kept_rate = (promises_kept / promises_resolved * 100) if promises_resolved else 0.0
+
     return {
         "total_count": total_count,
         "at_risk_total": float(at_risk_total),
@@ -28,4 +33,5 @@ def compute_summary() -> dict:
         "failed_count": failed_count,
         "processed_count": processed_count,
         "recovery_rate": round(recovery_rate, 1),
+        "promise_kept_rate": round(promise_kept_rate, 1),
     }

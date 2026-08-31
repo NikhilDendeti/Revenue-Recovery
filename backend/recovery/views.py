@@ -11,6 +11,7 @@ from .models import (
     Decision,
     Diagnosis,
     GuardrailEvent,
+    PromiseToPay,
     ScheduledAction,
     Transaction,
 )
@@ -20,6 +21,7 @@ from .serializers import (
     DecisionSerializer,
     DiagnosisSerializer,
     GuardrailEventSerializer,
+    PromiseToPaySerializer,
     ScheduledActionSerializer,
     TransactionChainSerializer,
     TransactionSerializer,
@@ -84,6 +86,12 @@ class ScheduledActionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ScheduledAction.objects.all()
     serializer_class = ScheduledActionSerializer
     filterset_fields = ["transaction", "status"]
+
+
+class PromiseToPayViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = PromiseToPay.objects.all()
+    serializer_class = PromiseToPaySerializer
+    filterset_fields = ["status", "transaction"]
 
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):

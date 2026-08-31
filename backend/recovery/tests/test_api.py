@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from recovery.models import AuditLogEntry, Decision, Diagnosis, GuardrailEvent, Transaction
+from recovery.models import AuditLogEntry, Decision, Diagnosis, GuardrailEvent, PromiseToPay, Transaction
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("no_razorpay_keys")]
 
@@ -65,6 +68,61 @@ def test_scheduled_actions_list_empty(client):
     resp = client.get("/api/scheduled-actions/")
     assert resp.status_code == 200
     assert resp.json()["count"] == 0
+
+
+# --- promises-to-pay: read-only ---
+
+
+def test_promises_to_pay_list_and_filter_by_status_and_transaction(client, make_transaction):
+    txn_a = make_transaction(customer_id="cust_ptp_a")
+    txn_b = make_transaction(customer_id="cust_ptp_b")
+    pending = PromiseToPay.objects.create(
+        transaction=txn_a, promised_amount=100, promise_date=timezone.localdate() + timedelta(days=3),
+        source=PromiseToPay.Source.VOICE,
+    )
+    PromiseToPay.objects.create(
+        transaction=txn_b, promised_amount=200, promise_date=timezone.localdate() - timedelta(days=1),
+        source=PromiseToPay.Source.VOICE, status=PromiseToPay.Status.BROKEN,
+    )
+
+    resp = client.get("/api/promises-to-pay/")
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 2
+
+    by_status = client.get("/api/promises-to-pay/?status=pending")
+    assert by_status.status_code == 200
+    assert by_status.json()["count"] == 1
+    assert by_status.json()["results"][0]["id"] == pending.id
+
+    by_transaction = client.get(f"/api/promises-to-pay/?transaction={txn_b.id}")
+    assert by_transaction.status_code == 200
+    assert by_transaction.json()["count"] == 1
+    assert by_transaction.json()["results"][0]["status"] == PromiseToPay.Status.BROKEN
+
+
+@pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])
+def test_promises_to_pay_write_methods_are_rejected(client, make_transaction, method):
+    txn = make_transaction(customer_id="cust_ptp_write")
+    promise = PromiseToPay.objects.create(
+        transaction=txn, promised_amount=100, promise_date=timezone.localdate(), source=PromiseToPay.Source.VOICE
+    )
+    before_count = PromiseToPay.objects.count()
+
+    if method in {"put", "patch", "delete"}:
+        resp = getattr(client, method)(
+            f"/api/promises-to-pay/{promise.id}/", {"status": "kept"}, format="json"
+        )
+    else:
+        resp = client.post(
+            "/api/promises-to-pay/",
+            {"transaction": str(txn.id), "promised_amount": 500, "promise_date": timezone.localdate().isoformat(), "source": "voice"},
+            format="json",
+        )
+
+    assert resp.status_code == 405
+    assert PromiseToPay.objects.count() == before_count
+    promise.refresh_from_db()
+    assert promise.status == PromiseToPay.Status.PENDING
 
 
 # --- audit log: read-only ---

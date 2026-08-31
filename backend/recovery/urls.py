@@ -10,6 +10,7 @@ router.register("decisions", views.DecisionViewSet, basename="decision")
 router.register("actions", views.ActionViewSet, basename="action")
 router.register("guardrail-events", views.GuardrailEventViewSet, basename="guardrail-event")
 router.register("scheduled-actions", views.ScheduledActionViewSet, basename="scheduled-action")
+router.register("promises-to-pay", views.PromiseToPayViewSet, basename="promise-to-pay")
 router.register("audit-log", views.AuditLogViewSet, basename="audit-log")
 
 urlpatterns = [

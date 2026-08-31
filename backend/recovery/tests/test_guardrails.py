@@ -7,7 +7,7 @@ from django.db import connection
 from django.utils import timezone
 
 from recovery.guardrails import evaluate_guardrails
-from recovery.models import Action, ContactCooldown, Decision, Diagnosis, GuardrailEvent
+from recovery.models import Action, ContactCooldown, Decision, Diagnosis, GuardrailEvent, PromiseToPay
 
 pytestmark = pytest.mark.django_db
 
@@ -161,6 +161,37 @@ def test_contact_cap_race_only_one_of_two_concurrent_contacts_clears(make_transa
     cleared_count = sum(1 for v in results.values() if v)
     assert cleared_count == 1, f"expected exactly one of two concurrent contacts to clear, got {results}"
     assert ContactCooldown.objects.filter(customer_id="cust_race").count() == 1
+
+
+# --- 5b. Contact frequency cap, extended: a broken promise-to-pay ---
+
+
+def test_broken_promise_blocks_and_escalates_even_outside_cooldown(make_transaction):
+    txn = make_transaction(customer_id="cust_broken_promise", amount=500)
+    # Well outside the ordinary 24h cooldown — the timestamp check alone would pass.
+    ContactCooldown.objects.create(
+        customer_id="cust_broken_promise", last_contacted_at=timezone.now() - timedelta(days=10)
+    )
+    other_txn = make_transaction(customer_id="cust_broken_promise", amount=200)
+    PromiseToPay.objects.create(
+        transaction=other_txn, promised_amount=200, promise_date=timezone.localdate() - timedelta(days=1),
+        source=PromiseToPay.Source.VOICE, status=PromiseToPay.Status.BROKEN,
+    )
+
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.9), _dec(Decision.Action.NEW_PAYMENT_LINK))
+
+    assert verdict.cleared is False
+    assert verdict.escalate is True
+    assert verdict.hold_until is None
+    event = GuardrailEvent.objects.filter(transaction=txn, rule_name="contact_frequency_cap").latest("triggered_at")
+    assert event.rule_result == GuardrailEvent.Result.BLOCKED
+
+
+def test_no_broken_promise_is_unaffected_by_the_extension(make_transaction):
+    txn = make_transaction(customer_id="cust_no_broken_promise", amount=500)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.9), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    assert verdict.cleared is True
+    assert verdict.escalate is False
 
 
 # --- 6. Compliance hours ---
