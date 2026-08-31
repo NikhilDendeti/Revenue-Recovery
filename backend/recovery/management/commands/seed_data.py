@@ -1,9 +1,12 @@
 import random
 import uuid
+from datetime import timedelta
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction as db_transaction
 from django.db.models import ProtectedError
+from django.utils import timezone
 
 from recovery.models import Action, AuditLogEntry, ContactCooldown, Decision, Diagnosis, GuardrailEvent, ScheduledAction, Transaction
 
@@ -42,6 +45,27 @@ SUBSCRIPTION_FAILURE_CODES = [
     ("insufficient_funds", 0.20),
     ("", 0.10),
 ]
+# Last payment method attempted before a checkout_dropoff — free text like failure_code,
+# not a closed vocabulary (agents/pipeline.py's diagnosis tree only cares whether this is
+# blank). The blank share stands in for "never attempted a payment method at all" (browse
+# abandonment, per design.md Decision 3 of add-checkout-dropoff-recovery).
+CHECKOUT_DROPOFF_PAYMENT_METHODS = [
+    ("upi", 0.35),
+    ("card", 0.30),
+    ("netbanking", 0.15),
+    ("wallet", 0.10),
+    ("", 0.10),  # never attempted a payment method at all
+]
+# Age buckets (hours-ago range) a seeded checkout_dropoff row is drawn from, cycled across
+# the seeded set so every bucket in agents/pipeline.py's decision tree (fresh/short-window/
+# aging/cold) is represented, not just the happy-path recent one. Each row's draw is still
+# clamped to at least CHECKOUT_DROPOFF_AT_RISK_HOURS old at seed time (design.md Decision 2).
+CHECKOUT_DROPOFF_AGE_BUCKETS_HOURS = [
+    (0.5, 2),     # fresh
+    (2, 24),      # short-window
+    (24, 72),     # aging
+    (72, 240),    # cold
+]
 
 
 def _weighted_choice(pairs):
@@ -51,10 +75,12 @@ def _weighted_choice(pairs):
 
 def _customer():
     name = f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+    customer_id = f"cust_{uuid.uuid4().hex[:10]}"
     return {
-        "customer_id": f"cust_{uuid.uuid4().hex[:10]}",
+        "customer_id": customer_id,
         "customer_name": name,
         "customer_phone": f"+91{random.randint(7000000000, 9999999999)}",
+        "customer_email": f"{customer_id}@example.test",
     }
 
 
@@ -65,6 +91,7 @@ class Command(BaseCommand):
         parser.add_argument("--payment", type=int, default=22, help="payment_degradation records")
         parser.add_argument("--subscription", type=int, default=16, help="subscription_failure records")
         parser.add_argument("--receivable", type=int, default=16, help="B2B receivable records")
+        parser.add_argument("--checkout-dropoff", type=int, default=14, help="checkout_dropoff records")
         parser.add_argument("--flush", action="store_true", help="wipe existing data before seeding")
 
     def handle(self, *args, **opts):
@@ -96,11 +123,13 @@ class Command(BaseCommand):
         created += self._seed_payment_degradation(opts["payment"])
         created += self._seed_subscription_failure(opts["subscription"])
         created += self._seed_receivable(opts["receivable"])
+        created += self._seed_checkout_dropoff(opts["checkout_dropoff"])
 
         self.stdout.write(self.style.SUCCESS(f"Seeded {len(created)} transactions:"))
         self.stdout.write(f"  payment_degradation:  {opts['payment']}")
         self.stdout.write(f"  subscription_failure: {opts['subscription']}")
         self.stdout.write(f"  receivable:           {opts['receivable']}")
+        self.stdout.write(f"  checkout_dropoff:     {opts['checkout_dropoff']}")
         total_at_risk = sum(t.amount for t in created)
         self.stdout.write(f"  total at risk:        ₹{total_at_risk:,.0f}")
         self.stdout.write("Run 'python manage.py replay_batch' or POST /api/batch/replay/ to process them live.")
@@ -151,6 +180,45 @@ class Command(BaseCommand):
                     kind=Transaction.Kind.RECEIVABLE,
                     amount=amount,
                     failure_code="invoice_overdue",
+                    **_customer(),
+                )
+            )
+        return out
+
+    def _seed_checkout_dropoff(self, n):
+        out = []
+        at_risk_floor = settings.CHECKOUT_DROPOFF_AT_RISK_HOURS
+        ceiling = settings.GUARDRAILS["SPEND_CEILING_INR"]
+        for i in range(n):
+            low, high = CHECKOUT_DROPOFF_AGE_BUCKETS_HOURS[i % len(CHECKOUT_DROPOFF_AGE_BUCKETS_HOURS)]
+            # Every row satisfies checkout_initiated_at <= now - CHECKOUT_DROPOFF_AT_RISK_HOURS
+            # by construction (design.md Decision 2) — the bucket's own floor is raised to
+            # the at-risk window when the two disagree.
+            low = max(low, at_risk_floor)
+            high = max(high, low + 0.1)
+            hours_ago = random.uniform(low, high)
+            checkout_initiated_at = timezone.now() - timedelta(hours=hours_ago)
+
+            # Guarantee at least one "never attempted a payment method" row (i == 1) so the
+            # blank share is always represented regardless of the random draw, alongside the
+            # weighted-random draw (which itself usually produces a populated value).
+            last_payment_method = "" if i == 1 else _weighted_choice(CHECKOUT_DROPOFF_PAYMENT_METHODS)
+
+            if i == 0:
+                # Push one above the spend ceiling for guardrail-escalation coverage,
+                # mirroring _seed_receivable's high-value-outlier pattern above.
+                amount = round(random.uniform(ceiling + 5000, ceiling + 40000), 2)
+            else:
+                amount = round(random.uniform(300, 15000), 2)
+
+            out.append(
+                Transaction.objects.create(
+                    kind=Transaction.Kind.CHECKOUT_DROPOFF,
+                    amount=amount,
+                    failure_code="",
+                    razorpay_order_id=f"order_sim_{uuid.uuid4().hex[:12]}",
+                    checkout_initiated_at=checkout_initiated_at,
+                    last_payment_method=last_payment_method,
                     **_customer(),
                 )
             )

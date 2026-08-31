@@ -1,8 +1,14 @@
+from datetime import datetime, timedelta, timezone as dt_timezone
+
 import pytest
 
 from agents.pipeline import run_pipeline
 
 pytestmark = pytest.mark.usefixtures("heuristic_only")
+
+
+def _hours_ago(hours: float) -> str:
+    return (datetime.now(dt_timezone.utc) - timedelta(hours=hours)).isoformat()
 
 
 def _txn(**overrides):
@@ -183,3 +189,85 @@ def test_low_confidence_diagnosis_escalates_instead_of_guessing():
     result = run_pipeline(_txn(failure_code=""))
     assert result["diagnosis"]["confidence"] < 0.60
     assert result["decision"]["chosen_action"] == "escalate"
+
+
+# --- checkout_dropoff diagnosis: signal-based decision tree (design.md Decision 3) ---
+
+
+def _dropoff_txn(*, hours_ago, amount, last_payment_method):
+    return _txn(
+        kind="checkout_dropoff",
+        failure_code="",
+        amount=amount,
+        checkout_initiated_at=_hours_ago(hours_ago),
+        last_payment_method=last_payment_method,
+    )
+
+
+@pytest.mark.parametrize(
+    "hours_ago,amount,last_payment_method,expected_root_cause,expected_confidence",
+    [
+        # Row 1: recent + high-value + method attempted -> highest-intent, highest confidence.
+        (1, 10000.0, "card", "high_value_recent_dropoff", 0.85),
+        # Row 2: recent + method attempted, but below the high-value cart threshold.
+        (1, 2000.0, "upi", "recent_dropoff_payment_attempted", 0.80),
+        # Row 3: same-day but past the "recent" window, method attempted.
+        (10, 2000.0, "netbanking", "short_window_dropoff", 0.68),
+        # Row 4: no payment method ever attempted, checked ahead of the age-only bands —
+        # even a stale (50h) cart with no method resolves here, not "aging_dropoff".
+        (50, 2000.0, "", "browse_abandonment", 0.45),
+        # Row 5: multi-day-old, method attempted, still within the 72h aging window.
+        (50, 2000.0, "card", "aging_dropoff", 0.55),
+        # Row 6: past a week old, method attempted -> genuinely low-confidence.
+        (200, 2000.0, "card", "cold_dropoff", 0.32),
+    ],
+)
+def test_checkout_dropoff_diagnosis_decision_tree(hours_ago, amount, last_payment_method, expected_root_cause, expected_confidence):
+    result = run_pipeline(_dropoff_txn(hours_ago=hours_ago, amount=amount, last_payment_method=last_payment_method))
+    diagnosis = result["diagnosis"]
+    assert diagnosis["root_cause"] == expected_root_cause
+    assert diagnosis["confidence"] == expected_confidence
+
+
+def test_checkout_dropoff_missing_checkout_initiated_at_does_not_crash():
+    """No time signal at all (e.g. a malformed/absent value) must not raise — it's
+    treated as 'long ago', same honest low-confidence territory as any other unclear
+    signal, per _hours_since's documented behavior."""
+    txn = _txn(kind="checkout_dropoff", failure_code="", amount=2000.0, checkout_initiated_at=None, last_payment_method="")
+    result = run_pipeline(txn)
+    assert result["diagnosis"]["root_cause"] == "browse_abandonment"
+
+
+# --- checkout_dropoff decision: always new_payment_link, never retry_order ---
+
+
+def test_checkout_dropoff_confident_diagnosis_routes_to_new_payment_link():
+    result = run_pipeline(_dropoff_txn(hours_ago=1, amount=10000.0, last_payment_method="card"))
+    assert result["decision"]["chosen_action"] == "new_payment_link"
+    assert "checkout" in result["decision"]["reasoning_text"].lower()
+
+
+def test_checkout_dropoff_low_confidence_escalates_via_existing_floor():
+    """aging_dropoff/cold_dropoff/browse_abandonment all sit below the confidence floor
+    and must escalate — with zero new escalation code, via the same confidence check
+    every other kind already goes through."""
+    for hours_ago, method in [(50, "card"), (200, "card"), (10, "")]:
+        result = run_pipeline(_dropoff_txn(hours_ago=hours_ago, amount=2000.0, last_payment_method=method))
+        assert result["diagnosis"]["confidence"] < 0.60
+        assert result["decision"]["chosen_action"] == "escalate"
+
+
+def test_checkout_dropoff_never_produces_retry_order():
+    """Regression guard: a checkout_dropoff transaction must never pick retry_order —
+    Checkout was never completed, so there's no failed payment to retry, even when a
+    razorpay_order_id happens to be present (design.md Decision 4)."""
+    for hours_ago in [0.5, 1, 10, 50, 200]:
+        for amount in [500.0, 2000.0, 15000.0]:
+            for last_payment_method in ["", "card", "upi"]:
+                txn = _dropoff_txn(hours_ago=hours_ago, amount=amount, last_payment_method=last_payment_method)
+                txn["razorpay_order_id"] = "order_sim_dropoff"
+                result = run_pipeline(txn)
+                assert result["decision"]["chosen_action"] != "retry_order", (
+                    f"checkout_dropoff with hours_ago={hours_ago}, amount={amount}, "
+                    f"last_payment_method={last_payment_method!r} picked retry_order"
+                )

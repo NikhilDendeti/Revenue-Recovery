@@ -3,11 +3,12 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.utils import timezone
 
 from recovery.guardrails import evaluate_guardrails
-from recovery.models import Action, ContactCooldown, Decision, Diagnosis, GuardrailEvent, PromiseToPay
+from recovery.models import Action, ContactCooldown, Decision, Diagnosis, GuardrailEvent, PromiseToPay, Transaction
 
 pytestmark = pytest.mark.django_db
 
@@ -246,3 +247,87 @@ def test_all_rules_pass_yields_cleared_verdict(make_transaction):
     assert verdict.escalate is False
     assert verdict.hold_until is None
     assert GuardrailEvent.objects.filter(transaction=txn, rule_result=GuardrailEvent.Result.BLOCKED).count() == 0
+
+
+# --- checkout_dropoff: same guardrails as other consumer flows, scoped the same way
+#     (design.md Decision 6 of add-checkout-dropoff-recovery — no code changes to this
+#     module; these tests prove the existing rules already apply correctly by construction) ---
+
+
+def _dropoff_txn(make_transaction, **overrides):
+    overrides.setdefault("failure_code", "")
+    return make_transaction(kind=Transaction.Kind.CHECKOUT_DROPOFF, **overrides)
+
+
+def test_checkout_dropoff_confidence_floor_blocks_low_confidence(make_transaction):
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_low_conf", amount=500)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.32), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    assert verdict.escalate is True
+    event = GuardrailEvent.objects.get(transaction=txn, rule_name="confidence_floor")
+    assert event.rule_result == GuardrailEvent.Result.BLOCKED
+
+
+def test_checkout_dropoff_confidence_floor_passes_high_confidence(make_transaction):
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_high_conf", amount=500)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    event = GuardrailEvent.objects.get(transaction=txn, rule_name="confidence_floor")
+    assert event.rule_result == GuardrailEvent.Result.PASSED
+
+
+def test_checkout_dropoff_spend_ceiling_blocks_high_value_cart(make_transaction):
+    over_ceiling = settings.GUARDRAILS["SPEND_CEILING_INR"] + 1000
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_over_ceiling", amount=over_ceiling)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.99), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    assert verdict.escalate is True
+    event = GuardrailEvent.objects.get(transaction=txn, rule_name="spend_ceiling")
+    assert event.rule_result == GuardrailEvent.Result.BLOCKED
+
+
+def test_checkout_dropoff_spend_ceiling_passes_under_ceiling(make_transaction):
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_under_ceiling", amount=500)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    event = GuardrailEvent.objects.get(transaction=txn, rule_name="spend_ceiling")
+    assert event.rule_result == GuardrailEvent.Result.PASSED
+
+
+def test_checkout_dropoff_contact_frequency_cap_blocks_repeat_contact(make_transaction):
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_repeat", amount=500)
+    ContactCooldown.objects.create(customer_id="cust_dropoff_repeat", last_contacted_at=timezone.now() - timedelta(hours=1))
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    assert verdict.cleared is False
+    assert verdict.hold_reason == "contact_frequency_cap"
+
+
+def test_checkout_dropoff_contact_frequency_cap_passes_first_contact(make_transaction):
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_first_contact", amount=500)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    assert verdict.cleared is True
+    assert ContactCooldown.objects.get(customer_id="cust_dropoff_first_contact")
+
+
+def test_checkout_dropoff_is_not_held_outside_business_hours(make_transaction):
+    """Regression guard distinguishing checkout_dropoff from receivable: the B2B
+    compliance-hours rule is gated on Kind.RECEIVABLE only, so a checkout_dropoff's
+    new_payment_link decision must clear even outside business hours."""
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_hours", amount=500)
+    with patch("recovery.guardrails.timezone.now", return_value=_local_time_at(3)):
+        verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    event = GuardrailEvent.objects.get(
+        transaction=txn, rule_name="compliance_hours", detail="not a B2B contact action"
+    )
+    assert event.rule_result == GuardrailEvent.Result.PASSED
+    assert verdict.cleared is True
+
+
+def test_checkout_dropoff_never_hits_retry_guardrails(make_transaction):
+    """max_retry_attempts and cooldown_between_retries are both gated on
+    chosen_action in RETRY_ACTIONS ({retry_order}) — never true for checkout_dropoff,
+    which always decides new_payment_link or escalate. Both rules PASS as a no-op,
+    exactly like any other kind's non-retry decision."""
+    txn = _dropoff_txn(make_transaction, customer_id="cust_dropoff_no_retry", amount=500)
+    verdict = evaluate_guardrails(txn, _diag(confidence=0.85), _dec(Decision.Action.NEW_PAYMENT_LINK))
+    max_retry_event = GuardrailEvent.objects.filter(transaction=txn, rule_name="max_retry_attempts")
+    assert not max_retry_event.exists()  # never even evaluated — not a retry action
+    cooldown_event = GuardrailEvent.objects.get(transaction=txn, rule_name="cooldown_between_retries")
+    assert cooldown_event.rule_result == GuardrailEvent.Result.PASSED
+    assert verdict.cleared is True

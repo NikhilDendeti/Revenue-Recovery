@@ -59,16 +59,30 @@ def _simulated(kind: str, **extra) -> dict:
     }
 
 
-def reopen_order_checkout(order_id: str | None, amount_paise: int, receipt: str) -> dict:
-    """Flow 1 fallback path: a fresh attempt against the same order intent. Real Razorpay
-    requires the customer present in Checkout to actually pay — this call only creates
-    (or confirms) the Order server-side; the frontend is responsible for opening
-    Checkout against it."""
+def reopen_order_checkout(
+    order_id: str | None,
+    amount_paise: int,
+    receipt: str,
+    customer_name: str,
+    customer_phone: str,
+) -> dict:
+    """Flow 1 primary path for a `retry_order` decision. Razorpay documents no operation
+    to reopen, confirm, or re-attempt a pre-existing Order (only `PATCH /orders/{id}`,
+    which updates `notes` only) — so, like `new_payment_link`, this issues a fresh
+    Payment Link. `retry_order` and `new_payment_link` are behaviorally identical in
+    live mode; only the `Decision.Action` label (and therefore the audit trail) tells
+    them apart. `order_id`, when present, is carried through only as provenance
+    metadata (`retried_order_id`) for the audit trail — it is not a lookup key."""
     if not _configured():
-        return _simulated("order", order_id=order_id or f"order_{uuid.uuid4().hex[:14]}", amount=amount_paise)
-    if order_id:
-        return _post(f"/orders/{order_id}", {})
-    return _post("/orders", {"amount": amount_paise, "currency": "INR", "receipt": receipt})
+        return _simulated(
+            "plink",
+            short_url=f"https://rzp.io/l/sim{uuid.uuid4().hex[:8]}",
+            amount=amount_paise,
+            retried_order_id=order_id,
+        )
+    description = f"RecoverAI recovery — {receipt}"
+    result = create_payment_link(amount_paise, description, customer_name, customer_phone)
+    return {**result, "retried_order_id": order_id}
 
 
 def create_payment_link(amount_paise: int, description: str, customer_name: str, customer_phone: str) -> dict:
@@ -89,19 +103,36 @@ def create_payment_link(amount_paise: int, description: str, customer_name: str,
     )
 
 
-def create_registration_link(amount_paise: int, description: str, customer_name: str, customer_phone: str) -> dict:
+def create_registration_link(
+    amount_paise: int, description: str, customer_name: str, customer_phone: str, customer_email: str
+) -> dict:
     """Flow 2: drive re-authorization of a dead mandate. There is no API to force a
-    retry on a halted subscription — only re-authorizing future cycles is possible."""
+    retry on a halted subscription — only re-authorizing future cycles is possible.
+
+    Razorpay's e-mandate authorization flow requires the customer's email, a
+    `subscription_registration` descriptor, and a zero amount on the registration
+    call itself (the real outstanding amount is conveyed via `description` only —
+    see `tasks.py::_call_razorpay`, which folds it into the label before calling
+    here). `method`/`auth_type` below are the documented-safe combination for
+    e-mandate registration as researched for this fix; not independently
+    re-verified against a live test-mode call beyond this file's own
+    `TestLiveMode` case — see design.md's Open Questions before building anything
+    UPI-specific on top of this."""
     if not _configured():
         return _simulated("reglink", short_url=f"https://rzp.io/rl/sim{uuid.uuid4().hex[:8]}")
+    if not customer_email:
+        raise RazorpayError(
+            "create_registration_link requires a customer email in live mode", status_code=None
+        )
     return _post(
         "/subscription_registration/auth_links",
         {
-            "customer": {"name": customer_name, "contact": customer_phone},
+            "customer": {"name": customer_name, "contact": customer_phone, "email": customer_email},
             "type": "link",
-            "amount": amount_paise,
+            "amount": 0,
             "currency": "INR",
             "description": description,
+            "subscription_registration": {"method": "emandate", "auth_type": "netbanking"},
         },
     )
 

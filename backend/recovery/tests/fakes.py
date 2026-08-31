@@ -213,8 +213,8 @@ class FakeGateway(PaymentGatewayInterface):
             raise self._raises
         return dict(self._response)
 
-    def reopen_order_checkout(self, order_id, amount_paise, receipt):
-        return self._call("reopen_order_checkout", order_id, amount_paise, receipt)
+    def reopen_order_checkout(self, order_id, amount_paise, receipt, customer_name, customer_phone):
+        return self._call("reopen_order_checkout", order_id, amount_paise, receipt, customer_name, customer_phone)
 
     def create_payment_link(self, amount_paise, description, customer_name, customer_phone):
         return self._call("create_payment_link", amount_paise, description, customer_name, customer_phone)

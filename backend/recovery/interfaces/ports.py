@@ -17,7 +17,9 @@ class PaymentGatewayInterface(ABC):
     reads an HTTP status code."""
 
     @abstractmethod
-    def reopen_order_checkout(self, order_id: str | None, amount_paise: int, receipt: str) -> dict:
+    def reopen_order_checkout(
+        self, order_id: str | None, amount_paise: int, receipt: str, customer_name: str, customer_phone: str
+    ) -> dict:
         ...
 
     @abstractmethod

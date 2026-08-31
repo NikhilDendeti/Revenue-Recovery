@@ -164,6 +164,7 @@ export const KIND_META = {
   payment_degradation: { label: "Payment degradation", short: "Payment", icon: "card" },
   subscription_failure: { label: "Subscription failure", short: "Subscription", icon: "repeat" },
   receivable: { label: "B2B receivable", short: "Receivable", icon: "invoice" },
+  checkout_dropoff: { label: "Checkout drop-off", short: "Drop-off", icon: "cart" },
 };
 
 export function kindMeta(kind) {
@@ -174,6 +175,7 @@ export const KIND_FILTERS = [
   { value: "payment_degradation", label: "Payment" },
   { value: "subscription_failure", label: "Subscription" },
   { value: "receivable", label: "Receivable" },
+  { value: "checkout_dropoff", label: "Drop-off" },
 ];
 
 export const STATUS_FILTERS = [

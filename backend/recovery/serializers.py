@@ -6,6 +6,7 @@ from .models import (
     Decision,
     Diagnosis,
     GuardrailEvent,
+    MandateSequence,
     PromiseToPay,
     ScheduledAction,
     Transaction,
@@ -63,6 +64,20 @@ class TransactionSerializer(serializers.ModelSerializer):
         ]
 
 
+class MandateSequenceSerializer(serializers.ModelSerializer):
+    """The mandate-recovery cadence's progress, shown on the reasoning-chain dialog
+    near the existing Scheduled tab (add-mandate-recovery-sequence)."""
+
+    total_steps = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MandateSequence
+        fields = ["current_step", "total_steps", "status"]
+
+    def get_total_steps(self, obj):
+        return 3
+
+
 class TransactionChainSerializer(serializers.ModelSerializer):
     """The full click-through reasoning chain for Panel 3 of the Recovery Room."""
 
@@ -72,6 +87,7 @@ class TransactionChainSerializer(serializers.ModelSerializer):
     guardrail_events = GuardrailEventSerializer(many=True, read_only=True)
     audit_entries = AuditLogEntrySerializer(many=True, read_only=True)
     scheduled_actions = ScheduledActionSerializer(many=True, read_only=True)
+    mandate_sequence = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
@@ -79,4 +95,14 @@ class TransactionChainSerializer(serializers.ModelSerializer):
             "id", "kind", "amount", "currency", "customer_id", "customer_name", "customer_phone",
             "merchant_id", "failure_code", "razorpay_order_id", "status", "created_at", "updated_at",
             "diagnoses", "decisions", "actions", "guardrail_events", "audit_entries", "scheduled_actions",
+            "mandate_sequence",
         ]
+
+    def get_mandate_sequence(self, obj):
+        # A subscription_failure transaction that was never sequenced (never
+        # decided registration_link, or escalated immediately) has no related
+        # MandateSequence row — getattr's default safely covers the reverse
+        # OneToOneField's DoesNotExist rather than a nested serializer silently
+        # omitting the key (spec: state "no active sequence" explicitly).
+        sequence = getattr(obj, "mandate_sequence", None)
+        return MandateSequenceSerializer(sequence).data if sequence is not None else None

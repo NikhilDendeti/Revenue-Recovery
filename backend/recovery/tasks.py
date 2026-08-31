@@ -17,6 +17,7 @@ from .models import (
     Decision,
     Diagnosis,
     GuardrailEvent,
+    MandateSequence,
     PromiseToPay,
     ScheduledAction,
     Transaction,
@@ -74,11 +75,20 @@ def _call_razorpay(txn, action_type) -> dict:
     amount_paise = int(txn.amount * 100)
     label = f"RecoverAI recovery — {txn.id}"
     if action_type == Decision.Action.RETRY_ORDER:
-        return razorpay_client.reopen_order_checkout(txn.razorpay_order_id, amount_paise, receipt=str(txn.id))
+        return razorpay_client.reopen_order_checkout(
+            txn.razorpay_order_id, amount_paise, str(txn.id), txn.customer_name, txn.customer_phone
+        )
     if action_type == Decision.Action.NEW_PAYMENT_LINK:
         return razorpay_client.create_payment_link(amount_paise, label, txn.customer_name, txn.customer_phone)
     if action_type == Decision.Action.REGISTRATION_LINK:
-        return razorpay_client.create_registration_link(amount_paise, label, txn.customer_name, txn.customer_phone)
+        # The registration call itself requests amount 0 (Razorpay's e-mandate
+        # requirement — see razorpay_client.create_registration_link); the real due
+        # amount is folded into the description text instead so the customer's
+        # registration-link page still shows what's owed.
+        registration_description = f"{label} — {txn.currency} {txn.amount} due"
+        return razorpay_client.create_registration_link(
+            amount_paise, registration_description, txn.customer_name, txn.customer_phone, txn.customer_email
+        )
     if action_type == Decision.Action.INVOICE_REMINDER:
         return razorpay_client.resend_invoice(txn.razorpay_order_id or "sim_invoice", medium="sms")
     return {"simulated": True, "note": "no Razorpay call for this action type"}
@@ -184,6 +194,164 @@ def _execute_action(txn, action_type, diagnosis_confidence) -> Action:
     return action
 
 
+def _advance_mandate_sequence(txn, action):
+    """The single hook called after every _execute_action invocation on a nudge action
+    for a subscription_failure transaction's mandate-recovery cadence (registration_link
+    at step 0, voice_reminder at step 1) — add-mandate-recovery-sequence. No-ops for any
+    transaction without an ACTIVE MandateSequence, so every existing _execute_action
+    call site can call this unconditionally with no extra guard."""
+    sequence = getattr(txn, "mandate_sequence", None)
+    if sequence is None or sequence.status != MandateSequence.Status.ACTIVE:
+        return
+
+    if action.action_type == Action.Type.ESCALATE:
+        sequence.status = MandateSequence.Status.ESCALATED
+        sequence.save(update_fields=["status", "updated_at"])
+        return
+
+    if action.result == Action.Result.SUCCESS:
+        sequence.status = MandateSequence.Status.RECOVERED
+        sequence.save(update_fields=["status", "updated_at"])
+        return
+
+    if action.result != Action.Result.FAILED or sequence.current_step >= 2:
+        # Step 2 is always `escalate` (caught by the branch above, whose outcome is
+        # never a dice roll — _execute_action special-cases ESCALATE before it ever
+        # reaches the SUCCESS/FAILED draw), so a FAILED nudge outcome at current_step
+        # >= 2 cannot occur in practice. Defensive no-op rather than an assertion, so a
+        # future step-count change fails soft.
+        return
+
+    # The nudge was ignored (FAILED) and a further step remains — re-open the
+    # transaction and chain the next step as a ScheduledAction row (the same
+    # DB-backed, Beat-swept pattern sweep_scheduled_actions already sweeps for
+    # cooldown/retry), never a raw multi-day Celery ETA task, so the cadence survives
+    # a worker restart.
+    next_step = sequence.current_step + 1
+    if next_step == 1:
+        next_action_type = Decision.Action.VOICE_REMINDER
+        run_after = timezone.now() + timedelta(days=settings.GUARDRAILS["MANDATE_SEQUENCE_STEP1_DELAY_DAYS"])
+    else:
+        next_action_type = Decision.Action.ESCALATE
+        run_after = timezone.now() + timedelta(hours=settings.GUARDRAILS["MANDATE_SEQUENCE_STEP2_DELAY_HOURS"])
+
+    sequence.current_step = next_step
+    sequence.save(update_fields=["current_step", "updated_at"])
+
+    ScheduledAction.objects.update_or_create(
+        transaction=txn,
+        status=ScheduledAction.Status.PENDING,
+        defaults={"action_type": next_action_type, "reason": "mandate_sequence_step", "run_after": run_after},
+    )
+    txn.status = Transaction.Status.HELD
+    txn.save(update_fields=["status", "updated_at"])
+    _audit(
+        txn, "mandate_sequence_step_scheduled", AuditLogEntry.Actor.SYSTEM,
+        {"next_step": next_step, "run_after": run_after.isoformat()},
+    )
+    _push_ticker(txn, "held", next_action_type)
+
+
+def _dispatch_mandate_sequence_step(scheduled, txn):
+    """Fires a chained mandate-sequence step (voice_reminder at step 1, escalate at
+    step 2) — add-mandate-recovery-sequence. Re-checks the transaction's own status
+    first (the cancellation path: a mid-sequence recovery, or any other resolution,
+    stops the cadence instead of continuing to nudge a resolved customer), then
+    re-invokes the full diagnose -> decide -> guardrail pipeline for the current step
+    exactly as _run_recovery_pipeline does for step 0 — every step honestly
+    re-evaluates guardrails against current data rather than trusting the advisory
+    action_type stored on the ScheduledAction row."""
+    txn.refresh_from_db()
+    sequence = getattr(txn, "mandate_sequence", None)
+
+    if txn.status not in (Transaction.Status.OPEN, Transaction.Status.HELD):
+        if sequence is not None:
+            sequence.status = MandateSequence.Status.CANCELLED
+            sequence.save(update_fields=["status", "updated_at"])
+        _audit(
+            txn, "mandate_sequence_cancelled", AuditLogEntry.Actor.SYSTEM,
+            {"transaction_status": txn.status},
+        )
+        return
+
+    if sequence is None:
+        # Defensive: a mandate_sequence_step row should never exist without an owning
+        # sequence — fail soft rather than crash the sweep.
+        logger.warning("_dispatch_mandate_sequence_step: no MandateSequence for txn %s", txn.id)
+        return
+
+    result = run_pipeline(
+        {
+            "kind": txn.kind,
+            "amount": float(txn.amount),
+            "currency": txn.currency,
+            "failure_code": txn.failure_code,
+            "customer_id": txn.customer_id,
+            "sequence_step": sequence.current_step,
+        }
+    )
+    diag_data, dec_data = result["diagnosis"], result["decision"]
+
+    diagnosis = Diagnosis.objects.create(
+        transaction=txn,
+        root_cause=diag_data["root_cause"],
+        confidence=diag_data["confidence"],
+        reasoning_text=diag_data["reasoning_text"],
+    )
+    _audit(
+        txn, "diagnosed", AuditLogEntry.Actor.AGENT,
+        {"root_cause": diagnosis.root_cause, "confidence": diagnosis.confidence, "reasoning": diagnosis.reasoning_text},
+    )
+
+    decision = Decision.objects.create(
+        transaction=txn, chosen_action=dec_data["chosen_action"], reasoning_text=dec_data["reasoning_text"]
+    )
+    _audit(
+        txn, "decided", AuditLogEntry.Actor.AGENT,
+        {"chosen_action": decision.chosen_action, "reasoning": decision.reasoning_text},
+    )
+
+    verdict = evaluate_guardrails(txn, diagnosis, decision)
+    recent_checks = list(
+        GuardrailEvent.objects.filter(transaction=txn).order_by("-triggered_at")[:6].values("rule_name", "rule_result")
+    )
+    decision.guardrail_checks_passed = recent_checks
+    decision.save(update_fields=["guardrail_checks_passed"])
+
+    for ev in GuardrailEvent.objects.filter(transaction=txn).order_by("-triggered_at")[:6]:
+        ws.push(
+            "guardrail",
+            {"transaction_id": str(txn.id), "rule_name": ev.rule_name, "rule_result": ev.rule_result, "detail": ev.detail},
+        )
+
+    if verdict.escalate:
+        action = _execute_action(txn, Decision.Action.ESCALATE, diagnosis.confidence)
+        _advance_mandate_sequence(txn, action)
+        return
+
+    if not verdict.cleared:
+        # A held step re-schedules another mandate_sequence_step row rather than
+        # falling through to the plain generic dispatch branch, so this exact step's
+        # guardrail re-evaluation is never skipped, even across an internal hold.
+        # current_step is deliberately NOT advanced here — the same step retries.
+        ScheduledAction.objects.update_or_create(
+            transaction=txn,
+            status=ScheduledAction.Status.PENDING,
+            defaults={"action_type": decision.chosen_action, "reason": "mandate_sequence_step", "run_after": verdict.hold_until},
+        )
+        txn.status = Transaction.Status.HELD
+        txn.save(update_fields=["status", "updated_at"])
+        _audit(
+            txn, "held", AuditLogEntry.Actor.SYSTEM,
+            {"reason": verdict.hold_reason, "run_after": verdict.hold_until.isoformat()},
+        )
+        _push_ticker(txn, "held", decision.chosen_action)
+        return
+
+    action = _execute_action(txn, decision.chosen_action, diagnosis.confidence)
+    _advance_mandate_sequence(txn, action)
+
+
 @shared_task
 def process_transaction_event(transaction_id):
     try:
@@ -220,6 +388,11 @@ def _run_recovery_pipeline(txn):
             "currency": txn.currency,
             "failure_code": txn.failure_code,
             "customer_id": txn.customer_id,
+            # checkout_dropoff-only signals (design.md Decision 5 of
+            # add-checkout-dropoff-recovery) — harmless/unused for the other three kinds,
+            # which never populate either field.
+            "checkout_initiated_at": txn.checkout_initiated_at.isoformat() if txn.checkout_initiated_at else None,
+            "last_payment_method": txn.last_payment_method or "",
         }
     )
     diag_data, dec_data = result["diagnosis"], result["decision"]
@@ -260,6 +433,16 @@ def _run_recovery_pipeline(txn):
         _execute_action(txn, Decision.Action.ESCALATE, diagnosis.confidence)
         return
 
+    # A subscription_failure transaction whose decision resolved to registration_link
+    # (retriable, and didn't immediately escalate at the guardrail level above) starts
+    # its mandate-recovery cadence tracker here — before the held/cleared branch below,
+    # since both paths still eventually attempt this same step-0 nudge
+    # (add-mandate-recovery-sequence). Created once: process_transaction_event's
+    # idempotency guard ensures _run_recovery_pipeline only ever runs once per
+    # transaction.
+    if txn.kind == Transaction.Kind.SUBSCRIPTION_FAILURE and decision.chosen_action == Decision.Action.REGISTRATION_LINK:
+        MandateSequence.objects.create(transaction=txn, current_step=0, status=MandateSequence.Status.ACTIVE)
+
     if not verdict.cleared:
         ScheduledAction.objects.update_or_create(
             transaction=txn,
@@ -275,7 +458,8 @@ def _run_recovery_pipeline(txn):
         _push_ticker(txn, "held", decision.chosen_action)
         return
 
-    _execute_action(txn, decision.chosen_action, diagnosis.confidence)
+    action = _execute_action(txn, decision.chosen_action, diagnosis.confidence)
+    _advance_mandate_sequence(txn, action)
 
 
 @shared_task
@@ -300,6 +484,13 @@ def dispatch_scheduled_action(scheduled_action_id):
     except ScheduledAction.DoesNotExist:
         return
     txn = scheduled.transaction
+
+    if scheduled.reason == "mandate_sequence_step":
+        # A chained mandate-recovery cadence step (add-mandate-recovery-sequence) needs
+        # its own guardrail re-evaluation, not the plain direct-execute body below.
+        _dispatch_mandate_sequence_step(scheduled, txn)
+        return
+
     try:
         confidence = txn.diagnoses.latest("agent_run_at").confidence
     except Diagnosis.DoesNotExist:
@@ -310,7 +501,8 @@ def dispatch_scheduled_action(scheduled_action_id):
         {"reason": scheduled.reason, "action_type": scheduled.action_type},
     )
     try:
-        _execute_action(txn, scheduled.action_type, confidence)
+        action = _execute_action(txn, scheduled.action_type, confidence)
+        _advance_mandate_sequence(txn, action)
     except Exception as err:
         # Same safety net as process_transaction_event: a delayed action that fails
         # unexpectedly must resolve the transaction, not leave it mid-execution.

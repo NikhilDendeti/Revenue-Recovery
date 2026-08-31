@@ -20,7 +20,7 @@ class TestRazorpayGatewayTranslation:
         err = razorpay_client.RazorpayError("gone", status_code=404)
         with mock.patch.object(razorpay_client, "reopen_order_checkout", side_effect=err):
             with pytest.raises(GatewayArtifactNotFound):
-                RazorpayGateway().reopen_order_checkout("order_x", 100, "receipt")
+                RazorpayGateway().reopen_order_checkout("order_x", 100, "receipt", "Name", "+919821123456")
 
     def test_a_500_becomes_a_generic_gateway_error(self):
         err = razorpay_client.RazorpayError("boom", status_code=500)

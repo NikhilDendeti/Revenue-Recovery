@@ -293,27 +293,62 @@ function Guardrails({ items }) {
   );
 }
 
-function Scheduled({ items }) {
-  if (items.length === 0) return <TabEmpty what="scheduled actions" />;
+function MandateSequenceProgress({ sequence }) {
+  if (!sequence) {
+    return (
+      <div className="mb-3 flex items-center gap-2 rounded-lg border border-hairline bg-surface-2 px-3.5 py-2.5">
+        <Icon name="clock" size={14} className="text-fg-subtle" />
+        <span className="text-meta text-fg-muted">No active recovery sequence</span>
+      </div>
+    );
+  }
+  const badgeTone =
+    sequence.status === "recovered"
+      ? "ok"
+      : sequence.status === "escalated"
+        ? "alert"
+        : sequence.status === "cancelled"
+          ? "neutral"
+          : "info";
   return (
-    <div className="space-y-3">
-      {items.map((s) => (
-        <Block key={s.id}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-h3 text-fg">{actionLabel(s.action_type)}</p>
-              <p className="mt-1 text-meta text-fg-muted">{humanize(s.reason)}</p>
-            </div>
-            <Badge tone={s.status === "pending" ? "info" : "neutral"} icon="clock" size="sm" className="shrink-0">
-              {humanize(s.status)}
-            </Badge>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-hairline pt-3">
-            <Meta label="Runs after" value={absoluteTime(s.run_after)} />
-            <Meta label="Created" value={absoluteTime(s.created_at)} />
-          </div>
-        </Block>
-      ))}
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-hairline bg-surface-2 px-3.5 py-2.5">
+      <span className="text-meta font-semibold text-fg">
+        Step {sequence.current_step + 1} of {sequence.total_steps}
+      </span>
+      <Badge tone={badgeTone} icon="clock" size="xs">
+        {humanize(sequence.status)}
+      </Badge>
+    </div>
+  );
+}
+
+function Scheduled({ items, mandateSequence }) {
+  return (
+    <div>
+      <MandateSequenceProgress sequence={mandateSequence} />
+      {items.length === 0 ? (
+        <TabEmpty what="scheduled actions" />
+      ) : (
+        <div className="space-y-3">
+          {items.map((s) => (
+            <Block key={s.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-h3 text-fg">{actionLabel(s.action_type)}</p>
+                  <p className="mt-1 text-meta text-fg-muted">{humanize(s.reason)}</p>
+                </div>
+                <Badge tone={s.status === "pending" ? "info" : "neutral"} icon="clock" size="sm" className="shrink-0">
+                  {humanize(s.status)}
+                </Badge>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4 border-t border-hairline pt-3">
+                <Meta label="Runs after" value={absoluteTime(s.run_after)} />
+                <Meta label="Created" value={absoluteTime(s.created_at)} />
+              </div>
+            </Block>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -588,7 +623,9 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
               {tab === "decision" && <Decisions items={chain.decisions || []} />}
               {tab === "actions" && <Actions items={chain.actions || []} />}
               {tab === "guardrails" && <Guardrails items={chain.guardrail_events || []} />}
-              {tab === "scheduled" && <Scheduled items={chain.scheduled_actions || []} />}
+              {tab === "scheduled" && (
+                <Scheduled items={chain.scheduled_actions || []} mandateSequence={chain.mandate_sequence ?? null} />
+              )}
             </>
           ) : null}
         </div>

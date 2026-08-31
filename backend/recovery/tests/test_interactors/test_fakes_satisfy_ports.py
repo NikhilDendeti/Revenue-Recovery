@@ -58,7 +58,7 @@ def test_fake_gateway_raises_once_then_succeeds():
 
     gateway = FakeGateway(raises=GatewayArtifactNotFound("gone"))
     try:
-        gateway.reopen_order_checkout("order_x", 100, "receipt")
+        gateway.reopen_order_checkout("order_x", 100, "receipt", "Name", "+919821123456")
     except GatewayArtifactNotFound:
         pass
     else:

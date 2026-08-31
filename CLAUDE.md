@@ -66,6 +66,13 @@ Postgres/Redis locally. React + Vite + Tailwind CSS v4 on the frontend.
   transaction in `PROCESSING`.
 - **Delayed/cooldown actions are `ScheduledAction` rows swept by a periodic Celery Beat
   task**, never raw multi-day Celery ETA tasks (those don't survive a worker restart).
+  A `subscription_failure` transaction's mandate-recovery cadence (nudge → different-
+  channel follow-up → escalate) is modeled the same way: a `MandateSequence` row
+  (`current_step`, `status`) tracks progress, and each step transition is chained as
+  another `ScheduledAction` with `reason="mandate_sequence_step"` — swept by the same
+  `sweep_scheduled_actions`/`dispatch_scheduled_action` path (which special-cases that
+  `reason` into `_dispatch_mandate_sequence_step`, re-running diagnose → decide →
+  guardrails for the step), not a separate scheduler.
 - **Live dashboard events don't assume a shared-memory channel layer.** The Celery
   worker (publisher) and Daphne (the WebSocket server) are separate processes; when
   Redis isn't configured, `recovery/ws.py` and `RecoveryConsumer` route events through

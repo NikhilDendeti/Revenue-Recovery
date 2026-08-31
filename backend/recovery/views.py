@@ -1,3 +1,5 @@
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -33,6 +35,13 @@ WEBHOOK_KIND_MAP = {
     "subscription.pending": Transaction.Kind.SUBSCRIPTION_FAILURE,
     "subscription.halted": Transaction.Kind.SUBSCRIPTION_FAILURE,
     "invoice.expired": Transaction.Kind.RECEIVABLE,
+    # NOT a real Razorpay webhook event — Razorpay does not emit a checkout-abandonment
+    # notification. This exists purely so the same simulated-webhook ingestion path the
+    # other three kinds already use (the batch simulator, this endpoint) can also create
+    # checkout_dropoff transactions. The at-risk window (settings.CHECKOUT_DROPOFF_AT_RISK_HOURS)
+    # is the producing system's responsibility to enforce before firing this event — it is
+    # not re-validated here, matching how e.g. "invoice.expired" is trusted as already-expired.
+    "checkout.abandoned": Transaction.Kind.CHECKOUT_DROPOFF,
 }
 
 
@@ -140,6 +149,16 @@ class WebhookView(APIView):
         if kind is None:
             return Response({"error": f"unrecognized event '{event}'"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # checkout_dropoff-only signals: an ISO datetime string (or absent -> None) and a
+        # free-text payment method (or absent -> ""). Harmless no-ops for the other three
+        # kinds, which never populate them.
+        checkout_initiated_at = None
+        raw_checkout_initiated_at = payload.get("checkout_initiated_at")
+        if raw_checkout_initiated_at:
+            checkout_initiated_at = parse_datetime(raw_checkout_initiated_at)
+            if checkout_initiated_at and timezone.is_naive(checkout_initiated_at):
+                checkout_initiated_at = timezone.make_aware(checkout_initiated_at)
+
         txn = Transaction.objects.create(
             kind=kind,
             amount=payload.get("amount", 0),
@@ -147,8 +166,11 @@ class WebhookView(APIView):
             customer_id=payload.get("customer_id", "unknown_customer"),
             customer_name=payload.get("customer_name", ""),
             customer_phone=payload.get("customer_phone", ""),
+            customer_email=payload.get("customer_email", ""),
             failure_code=payload.get("failure_code", ""),
             razorpay_order_id=payload.get("order_id", ""),
+            checkout_initiated_at=checkout_initiated_at,
+            last_payment_method=payload.get("last_payment_method", ""),
         )
         process_transaction_event.delay(str(txn.id))
         return Response(TransactionSerializer(txn).data, status=status.HTTP_201_CREATED)

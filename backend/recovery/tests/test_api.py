@@ -193,6 +193,33 @@ def test_webhook_unrecognized_event_is_rejected(client):
     assert resp.status_code == 400
 
 
+def test_webhook_checkout_abandoned_creates_dropoff_transaction(client):
+    initiated_at = (timezone.now() - timedelta(hours=5)).isoformat()
+    resp = client.post(
+        "/api/webhooks/razorpay/",
+        {
+            "event": "checkout.abandoned",
+            "payload": {
+                "amount": 4500,
+                "currency": "INR",
+                "customer_id": "cust_dropoff_webhook",
+                "order_id": "order_sim_dropoff_1",
+                "checkout_initiated_at": initiated_at,
+                "last_payment_method": "upi",
+            },
+        },
+        format="json",
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["kind"] == Transaction.Kind.CHECKOUT_DROPOFF
+    txn = Transaction.objects.get(customer_id="cust_dropoff_webhook")
+    assert txn.status == Transaction.Status.OPEN
+    assert txn.failure_code == ""
+    assert txn.last_payment_method == "upi"
+    assert txn.checkout_initiated_at is not None
+
+
 # --- authentication ---
 
 

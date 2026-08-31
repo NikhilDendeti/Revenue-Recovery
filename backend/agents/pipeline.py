@@ -9,8 +9,10 @@ consumer, an LLM round trip is seconds-to-tens-of-seconds and would stall the AS
 event loop for every other dashboard viewer.
 """
 
+from datetime import datetime, timezone as dt_timezone
 from typing import TypedDict
 
+from django.conf import settings
 from langgraph.graph import END, StateGraph
 
 from .llm import complete_json
@@ -107,7 +109,79 @@ _KIND_DEFAULTS = {
 }
 
 
+# --- checkout_dropoff diagnosis: a signal-based decision tree, not a failure-code table ---
+#
+# A checkout_dropoff transaction never carries a failure_code by design — Checkout was
+# never completed, it never failed. Diagnosing it from failure_code (or treating its
+# emptiness as the existing "no code -> unknown" weak signal below) would be wrong: that
+# fallback exists for the other three kinds, where an empty code really is a gap. Here it's
+# the norm, so a separate signal set — elapsed time, cart value, last payment method — is
+# used instead (design.md Decision 3 of add-checkout-dropoff-recovery). Rows are checked in
+# order, first match wins.
+def _hours_since(iso_or_dt) -> float:
+    """Hours elapsed since `iso_or_dt` (an ISO-8601 string, a datetime, or None). Missing
+    or unparseable input returns +inf — no time signal at all is treated as "long ago"
+    rather than guessing recency, so it lands in the same honest low-confidence territory
+    as any other genuinely unclear signal."""
+    if iso_or_dt is None:
+        return float("inf")
+    if isinstance(iso_or_dt, datetime):
+        dt = iso_or_dt
+    else:
+        try:
+            dt = datetime.fromisoformat(str(iso_or_dt))
+        except ValueError:
+            return float("inf")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=dt_timezone.utc)
+    return (datetime.now(dt_timezone.utc) - dt).total_seconds() / 3600.0
+
+
+def _heuristic_checkout_dropoff_diagnosis(txn: dict) -> dict:
+    hours_since_initiated = _hours_since(txn.get("checkout_initiated_at"))
+    amount = txn.get("amount") or 0
+    method_attempted = bool(txn.get("last_payment_method"))
+
+    if hours_since_initiated <= 2 and amount >= settings.HIGH_VALUE_CART_INR and method_attempted:
+        return {
+            "root_cause": "high_value_recent_dropoff",
+            "confidence": 0.85,
+            "reasoning_text": "Recent, high-value cart with a payment method already attempted — the highest-intent signal, worth the fastest, most confident nudge.",
+        }
+    if hours_since_initiated <= 2 and method_attempted:
+        return {
+            "root_cause": "recent_dropoff_payment_attempted",
+            "confidence": 0.80,
+            "reasoning_text": "Customer was mid-payment very recently — a short recall window while intent is still fresh.",
+        }
+    if hours_since_initiated <= 24 and method_attempted:
+        return {
+            "root_cause": "short_window_dropoff",
+            "confidence": 0.68,
+            "reasoning_text": "Still same-day, but intent has cooled somewhat since the payment attempt.",
+        }
+    if not method_attempted:
+        return {
+            "root_cause": "browse_abandonment",
+            "confidence": 0.45,
+            "reasoning_text": "Never attempted a payment method at all — weaker purchase intent than a mid-payment drop-off.",
+        }
+    if hours_since_initiated <= 72:
+        return {
+            "root_cause": "aging_dropoff",
+            "confidence": 0.55,
+            "reasoning_text": "Multi-day-old drop-off — still plausible to recover, but confidence honestly sits near the floor.",
+        }
+    return {
+        "root_cause": "cold_dropoff",
+        "confidence": 0.32,
+        "reasoning_text": "Past a week old — treated like any other genuinely low-confidence diagnosis.",
+    }
+
+
 def _heuristic_diagnosis(txn: dict) -> dict:
+    if txn["kind"] == "checkout_dropoff":
+        return _heuristic_checkout_dropoff_diagnosis(txn)
     code = (txn.get("failure_code") or "").lower()
     if code in _CODE_DIAGNOSES:
         root_cause, confidence, reasoning = _CODE_DIAGNOSES[code]
@@ -175,6 +249,7 @@ _REASONING = {
     "retry_order": "Root cause is retriable on the same order intent — re-opening Checkout rather than inventing a retry call that doesn't exist.",
     "new_payment_link": "Same card/order can't be reused — issuing a fresh payable artifact instead.",
     "registration_link": "This is a subscription/mandate context: Razorpay's own auto-retry schedule already governs the charge and there's no API to force a retry — driving re-authorization is the actionable lever.",
+    "voice_reminder": "Step 2 of the mandate recovery cadence: the registration-link nudge went unanswered, so this re-approaches the customer on a different channel before the cadence's final escalation step.",
     "invoice_reminder": "Overdue receivable — nudging via the existing invoice's reminder channel before escalating to a higher-touch channel.",
 }
 
@@ -185,13 +260,34 @@ def _heuristic_decision(txn: dict, diagnosis: dict) -> dict:
         return {"chosen_action": "escalate", "reasoning_text": "Diagnosis confidence too low to act autonomously — routing to human review rather than guessing with money."}
 
     if txn["kind"] == "subscription_failure":
-        action = "registration_link" if root_cause in _SUBSCRIPTION_RETRIABLE_ROOT_CAUSES else "escalate"
+        # sequence_step (add-mandate-recovery-sequence): None/0 = the first nudge
+        # (today's existing behavior, unchanged); 1 = a different-channel follow-up
+        # nudge after the first was ignored; 2 = the cadence's own terminal step,
+        # always escalate regardless of diagnosis.
+        sequence_step = txn.get("sequence_step")
+        if sequence_step == 2:
+            action = "escalate"
+        elif sequence_step == 1:
+            action = "voice_reminder" if root_cause in _SUBSCRIPTION_RETRIABLE_ROOT_CAUSES else "escalate"
+        else:
+            action = "registration_link" if root_cause in _SUBSCRIPTION_RETRIABLE_ROOT_CAUSES else "escalate"
     elif txn["kind"] == "receivable":
         action = "invoice_reminder" if root_cause == "invoice_overdue" else "escalate"
+    elif txn["kind"] == "checkout_dropoff":
+        # Always a fresh payment link, never retry_order: Checkout was simply never
+        # completed — there's no failed payment to retry, even when a razorpay_order_id
+        # is present (design.md Decision 4 of add-checkout-dropoff-recovery).
+        action = "new_payment_link"
     else:
         action = _PAYMENT_DEGRADATION_ACTIONS.get(root_cause, "escalate")
 
-    reasoning = _REASONING.get(action, "No confident action mapping for this flow — escalating.")
+    if txn["kind"] == "checkout_dropoff":
+        # The shared _REASONING["new_payment_link"] string ("Same card/order can't be
+        # reused") is factually wrong here — nothing failed, so it's bypassed in favor of
+        # reasoning text written for this kind specifically.
+        reasoning = "Customer never completed Checkout — there's no failed payment to retry, so a fresh payment link recaptures the cart."
+    else:
+        reasoning = _REASONING.get(action, "No confident action mapping for this flow — escalating.")
     return {"chosen_action": action, "reasoning_text": reasoning}
 
 
@@ -207,7 +303,10 @@ def _diagnose_node(state: PipelineState) -> PipelineState:
         system_prompt=(
             "You are the Diagnosis Agent in a revenue-recovery pipeline. Given a failed "
             "transaction, return JSON with exactly these keys: root_cause (short snake_case "
-            "string), confidence (float 0-1), reasoning_text (one or two sentences)."
+            "string), confidence (float 0-1), reasoning_text (one or two sentences). "
+            "Note: a checkout_dropoff transaction has no failure code by design — Checkout "
+            "was never completed, it never failed — so reason over elapsed time since "
+            "checkout_initiated_at, the cart's amount, and last_payment_method instead."
         ),
         user_prompt=f"Transaction: {txn}",
     )
@@ -217,18 +316,30 @@ def _diagnose_node(state: PipelineState) -> PipelineState:
 
 def _decide_node(state: PipelineState) -> PipelineState:
     txn, diagnosis = state["transaction"], state["diagnosis"]
+    sequence_step = txn.get("sequence_step")
+    step_note = (
+        f"\nThis transaction is at step {sequence_step} of a 3-step mandate recovery "
+        "cadence — pick the step-appropriate action (a later step uses a different "
+        "channel, or escalates outright) rather than repeating the first nudge."
+        if sequence_step not in (None, 0)
+        else ""
+    )
     llm_result = complete_json(
         system_prompt=(
             "You are the Decision Agent in a revenue-recovery pipeline. Given a transaction "
             "and its diagnosis, choose ONE action from: retry_order, new_payment_link, "
-            "registration_link, invoice_reminder, escalate. Return JSON with exactly these "
-            "keys: chosen_action, reasoning_text. Note: there is no API to force-retry a "
-            "specific failed payment or a halted subscription — never choose an action that "
-            "assumes one exists."
+            "registration_link, invoice_reminder, voice_reminder, escalate. Return JSON with "
+            "exactly these keys: chosen_action, reasoning_text. Note: there is no API to "
+            "force-retry a specific failed payment or a halted subscription — never choose an "
+            "action that assumes one exists. A checkout_dropoff transaction has no order to "
+            "retry — prefer new_payment_link."
         ),
-        user_prompt=f"Transaction: {txn}\nDiagnosis: {diagnosis}",
+        user_prompt=f"Transaction: {txn}\nDiagnosis: {diagnosis}{step_note}",
     )
-    valid_actions = {"retry_order", "new_payment_link", "registration_link", "invoice_reminder", "escalate"}
+    valid_actions = {
+        "retry_order", "new_payment_link", "registration_link", "invoice_reminder",
+        "voice_reminder", "escalate",
+    }
     decision = (
         llm_result
         if llm_result and llm_result.get("chosen_action") in valid_actions and "reasoning_text" in llm_result
@@ -248,5 +359,10 @@ compiled_pipeline = _graph.compile()
 
 def run_pipeline(transaction_fields: dict) -> PipelineState:
     """transaction_fields: a plain dict (kind, amount, currency, failure_code, customer_id,
-    customer_name) — the graph is intentionally decoupled from the Django ORM."""
+    customer_name, sequence_step) — the graph is intentionally decoupled from the Django
+    ORM. sequence_step is optional (defaults to None via .get() wherever it's read) and
+    only meaningful for a subscription_failure transaction re-entering the pipeline
+    mid-cadence (add-mandate-recovery-sequence): None/0 = the first nudge (today's
+    existing behavior), 1 = the follow-up nudge on a different channel, 2 = the
+    cadence's own terminal escalate step."""
     return compiled_pipeline.invoke({"transaction": transaction_fields})

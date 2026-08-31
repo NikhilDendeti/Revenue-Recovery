@@ -7,6 +7,7 @@ from .models import (
     Decision,
     Diagnosis,
     GuardrailEvent,
+    MandateSequence,
     ScheduledAction,
     Transaction,
 )
@@ -32,6 +33,12 @@ class DecisionAdmin(admin.ModelAdmin):
 @admin.register(ScheduledAction)
 class ScheduledActionAdmin(admin.ModelAdmin):
     list_display = ("transaction", "action_type", "run_after", "status")
+    list_filter = ("status",)
+
+
+@admin.register(MandateSequence)
+class MandateSequenceAdmin(admin.ModelAdmin):
+    list_display = ("transaction", "current_step", "status", "created_at")
     list_filter = ("status",)
 
 

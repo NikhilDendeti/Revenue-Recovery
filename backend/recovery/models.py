@@ -11,6 +11,7 @@ class Transaction(models.Model):
         PAYMENT_DEGRADATION = "payment_degradation", "Payment degradation"
         SUBSCRIPTION_FAILURE = "subscription_failure", "Subscription failure"
         RECEIVABLE = "receivable", "B2B receivable"
+        CHECKOUT_DROPOFF = "checkout_dropoff", "Checkout drop-off"
 
     class Status(models.TextChoices):
         OPEN = "open", "Open"
@@ -27,9 +28,12 @@ class Transaction(models.Model):
     customer_id = models.CharField(max_length=64, db_index=True)
     customer_name = models.CharField(max_length=128, blank=True)
     customer_phone = models.CharField(max_length=20, blank=True)
+    customer_email = models.EmailField(blank=True)
     merchant_id = models.CharField(max_length=64, default="demo_merchant")
     failure_code = models.CharField(max_length=64, blank=True)
     razorpay_order_id = models.CharField(max_length=64, blank=True)
+    checkout_initiated_at = models.DateTimeField(null=True, blank=True)
+    last_payment_method = models.CharField(max_length=32, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -230,3 +234,33 @@ class BroadcastEvent(models.Model):
     event_type = models.CharField(max_length=32)
     payload = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+class MandateSequence(models.Model):
+    """Tracks a subscription_failure transaction through the fixed 3-step
+    nudge-then-escalate cadence: step 0 - registration-link nudge (today's existing
+    behavior, unchanged), step 1 - a follow-up nudge on a different channel
+    (voice_reminder) after a configurable delay if the customer hasn't recovered, step
+    2 - escalate to the human queue if still unresolved. Created once, lazily, the
+    moment a subscription_failure transaction's first Decision resolves to
+    registration_link without an immediate guardrail escalation — an immediately
+    escalated transaction is never sequenced. Each step transition is chained as a
+    ScheduledAction row (reason="mandate_sequence_step"), the same DB-backed,
+    Beat-swept pattern recovery.tasks.sweep_scheduled_actions already sweeps for
+    cooldown/retry — never a raw multi-day Celery ETA task — so the cadence survives a
+    worker restart."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        RECOVERED = "recovered", "Recovered"
+        ESCALATED = "escalated", "Escalated"
+        CANCELLED = "cancelled", "Cancelled"
+
+    transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name="mandate_sequence")
+    current_step = models.PositiveSmallIntegerField(default=0)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]

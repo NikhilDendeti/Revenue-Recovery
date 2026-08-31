@@ -31,8 +31,10 @@ class RazorpayGateway(PaymentGatewayInterface):
                 raise GatewayArtifactNotFound(str(err), cause=err) from err
             raise GatewayError(str(err), cause=err) from err
 
-    def reopen_order_checkout(self, order_id, amount_paise, receipt):
-        return self._translate("reopen_order_checkout", order_id, amount_paise, receipt)
+    def reopen_order_checkout(self, order_id, amount_paise, receipt, customer_name, customer_phone):
+        return self._translate(
+            "reopen_order_checkout", order_id, amount_paise, receipt, customer_name, customer_phone
+        )
 
     def create_payment_link(self, amount_paise, description, customer_name, customer_phone):
         return self._translate("create_payment_link", amount_paise, description,

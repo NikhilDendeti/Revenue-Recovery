@@ -212,7 +212,23 @@ GUARDRAILS = {
     "CONFIDENCE_FLOOR": env.float("GUARDRAIL_CONFIDENCE_FLOOR", default=0.60),
     "BUSINESS_HOURS_START": env.int("GUARDRAIL_BUSINESS_HOURS_START", default=9),
     "BUSINESS_HOURS_END": env.int("GUARDRAIL_BUSINESS_HOURS_END", default=19),
+    # Mandate-recovery cadence delays (add-mandate-recovery-sequence): step 1 is a
+    # multi-day wait for the customer to act on the first nudge; step 2 is "escalate if
+    # still unresolved" — a short delay keeps it on the same DB-backed/Beat-swept rail
+    # as everything else without making an already-decided escalation wait days.
+    "MANDATE_SEQUENCE_STEP1_DELAY_DAYS": env.int("GUARDRAIL_MANDATE_SEQUENCE_STEP1_DELAY_DAYS", default=3),
+    "MANDATE_SEQUENCE_STEP2_DELAY_HOURS": env.int("GUARDRAIL_MANDATE_SEQUENCE_STEP2_DELAY_HOURS", default=1),
 }
+
+# --- RecoverAI: checkout drop-off diagnosis tuning ---
+# Minimum age (hours) an abandoned checkout must reach before it counts as at-risk.
+# Enforced by producers (seed_data, a real detector) — not re-validated at ingestion,
+# matching how the other simulated webhook kinds already trust their caller.
+CHECKOUT_DROPOFF_AT_RISK_HOURS = env.float("CHECKOUT_DROPOFF_AT_RISK_HOURS", default=1.0)
+# Cart value (INR) above which a recent, method-attempted drop-off is treated as
+# especially high-intent. A diagnosis-confidence tuning constant, distinct from
+# GUARDRAILS["SPEND_CEILING_INR"] (which gates whether to act at all).
+HIGH_VALUE_CART_INR = env.int("HIGH_VALUE_CART_INR", default=8000)
 
 # Demo pacing: seconds of stagger between each transaction during a batch replay.
 REPLAY_STAGGER_SECONDS = env.float("REPLAY_STAGGER_SECONDS", default=1.5)
