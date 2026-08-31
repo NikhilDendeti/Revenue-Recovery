@@ -10,17 +10,35 @@ from recovery.models import Action, AuditLogEntry, ContactCooldown, Decision, Di
 FIRST_NAMES = ["Aarav", "Vivaan", "Diya", "Ananya", "Ishaan", "Priya", "Rohan", "Kavya", "Arjun", "Meera", "Karthik", "Sneha"]
 LAST_NAMES = ["Sharma", "Verma", "Iyer", "Reddy", "Nair", "Gupta", "Menon", "Rao", "Kapoor", "Joshi"]
 
+# Real Razorpay reason codes (card-flavored) — see agents/pipeline.py's _CODE_DIAGNOSES
+# for how each of these resolves to a root cause and action.
 PAYMENT_FAILURE_CODES = [
     ("insufficient_funds", 0.28),
     ("card_declined", 0.22),
-    ("card_declined_expired", 0.12),
-    ("network_timeout", 0.14),
+    ("card_expired", 0.12),
+    ("payment_timed_out", 0.14),
     ("", 0.10),  # no code at all — deliberately ambiguous, exercises the confidence floor
-    ("issuer_unavailable_timeout", 0.14),
+    ("issuer_technical_error", 0.14),
 ]
+# Real Razorpay reason codes (UPI-flavored) — folded into _seed_payment_degradation
+# alongside PAYMENT_FAILURE_CODES so seeded data can exercise a UPI failure path too.
+UPI_FAILURE_CODES = [
+    ("invalid_vpa", 0.30),
+    ("vpa_resolution_failed", 0.20),
+    ("payment_collect_request_expired", 0.15),
+    ("bank_technical_error", 0.15),
+    ("payment_declined", 0.10),
+    ("payment_timed_out", 0.05),
+    ("payment_cancelled", 0.05),
+]
+# Share of seeded payment_degradation transactions drawn from the UPI pool rather than
+# the card pool above.
+UPI_SHARE = 0.3
 SUBSCRIPTION_FAILURE_CODES = [
-    ("mandate_charge_failed", 0.45),
-    ("card_declined_mandate", 0.25),
+    ("reqauth_mandate_not_acknowledged", 0.20),
+    ("mandate_creation_failed", 0.15),
+    ("funds_blocked_by_mandate", 0.10),
+    ("card_declined", 0.25),
     ("insufficient_funds", 0.20),
     ("", 0.10),
 ]
@@ -90,7 +108,8 @@ class Command(BaseCommand):
     def _seed_payment_degradation(self, n):
         out = []
         for _ in range(n):
-            code = _weighted_choice(PAYMENT_FAILURE_CODES)
+            pool = UPI_FAILURE_CODES if random.random() < UPI_SHARE else PAYMENT_FAILURE_CODES
+            code = _weighted_choice(pool)
             amount = round(random.uniform(300, 15000), 2)
             out.append(
                 Transaction.objects.create(
