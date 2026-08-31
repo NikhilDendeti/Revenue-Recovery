@@ -17,7 +17,8 @@ backend, with PostgreSQL + Redis in production and **no external services at all
 local dev (SQLite + a filesystem-based Celery broker + a small DB-backed relay standing
 in for Channels' Redis layer — see "Local dev needs nothing installed" below); a
 LangGraph diagnosis→decision pipeline with a deterministic heuristic fallback; React +
-Tailwind on the frontend.
+Vite + Tailwind CSS v4 on the frontend, on a single cinematic dark design system with no
+UI, icon, or animation dependencies.
 
 **Nothing here needs real third-party credentials to run.** No `OPENAI_API_KEY`/
 `ANTHROPIC_API_KEY` → the pipeline uses a rule-based diagnosis/decision fallback. No
@@ -104,9 +105,14 @@ python manage.py replay_batch --sync   # runs the whole pipeline in-process, no 
 
 ```bash
 cd backend
-pytest            # 72 tests: guardrails, the diagnosis/decision heuristic, the audit
+pytest            # 111 tests: guardrails, the diagnosis/decision heuristic, the audit
                    # log's append-only DB trigger, the REST API, JWT auth (REST + WS),
-                   # the WebSocket push path, and the Celery task pipeline
+                   # the WebSocket push path, and the Celery task pipeline. Heuristic-path
+                   # tests force the LLM call off (agents.pipeline.complete_json patched to
+                   # None) so they're deterministic regardless of whether OPENAI_API_KEY is
+                   # set in .env; a handful of exact-heuristic-output tests use the
+                   # `heuristic_only` fixture instead and skip cleanly when a real key is
+                   # configured.
 ```
 
 Runs against whatever `DATABASE_URL`/`REDIS_URL` resolve to locally — SQLite by
@@ -136,9 +142,17 @@ backend/
   agents/tests/    pytest suite for the pipeline heuristic
   pytest.ini, conftest.py   shared test config and fixtures
 frontend/
-  src/components/  Login, Dashboard, Recovery Ticker, Guardrail Console, Audit Trail,
-                   Chain drawer, Voice moment
-  src/lib/         REST client, auth (JWT), WebSocket hook, formatting helpers
+  src/index.css       the design system — Tailwind v4 @theme tokens (colour, type,
+                      radius, elevation, motion) + composite utilities. Every component
+                      draws from here; no component defines its own palette.
+  src/components/     Login, Dashboard, Header, MobileNav, Hero, Summary strip,
+                      Search + filters, Content row (carousel), Transaction card,
+                      Recovery Ticker, Guardrail Console, Audit Trail, Chain dialog,
+                      Voice moment, Error boundary
+  src/components/ui/  primitives — Button, Icon, Badge, Surface (Panel/Card), Skeleton,
+                      EmptyState, Tooltip, Toast provider, Wordmark
+  src/lib/            REST client, auth (JWT), WebSocket hook, formatting + status
+                      descriptors, section/nav state, toast context
 render.yaml        Render Blueprint: web (Daphne) + worker + beat + Postgres + Redis
 ```
 

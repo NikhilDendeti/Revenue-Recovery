@@ -27,7 +27,8 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("no_razorpay_keys")
 
 def test_process_transaction_event_cleared_records_recovered_or_failed(make_transaction):
     txn = make_transaction(failure_code="insufficient_funds", amount=500, customer_id="cust_cleared")
-    process_transaction_event(str(txn.id))
+    with patch("agents.pipeline.complete_json", return_value=None):
+        process_transaction_event(str(txn.id))
 
     txn.refresh_from_db()
     assert txn.status in {Transaction.Status.RECOVERED, Transaction.Status.FAILED}
@@ -43,7 +44,8 @@ def test_process_transaction_event_cleared_records_recovered_or_failed(make_tran
 
 def test_process_transaction_event_held_creates_one_scheduled_action(make_transaction):
     txn = make_transaction(failure_code="card_declined", amount=500, customer_id="cust_held")
-    process_transaction_event(str(txn.id))
+    with patch("agents.pipeline.complete_json", return_value=None):
+        process_transaction_event(str(txn.id))
 
     txn.refresh_from_db()
     assert txn.status == Transaction.Status.HELD
@@ -56,7 +58,8 @@ def test_process_transaction_event_held_creates_one_scheduled_action(make_transa
 
 def test_process_transaction_event_escalated_on_low_confidence(make_transaction):
     txn = make_transaction(failure_code="", amount=500, customer_id="cust_escalated")
-    process_transaction_event(str(txn.id))
+    with patch("agents.pipeline.complete_json", return_value=None):
+        process_transaction_event(str(txn.id))
 
     txn.refresh_from_db()
     assert txn.status == Transaction.Status.ESCALATED
@@ -121,7 +124,8 @@ def test_trigger_voice_showcase_creates_action_and_promise_to_pay(make_transacti
 
 def test_guardrail_events_are_logged_for_every_processed_transaction(make_transaction):
     txn = make_transaction(failure_code="insufficient_funds", amount=500)
-    process_transaction_event(str(txn.id))
+    with patch("agents.pipeline.complete_json", return_value=None):
+        process_transaction_event(str(txn.id))
     rule_names = set(GuardrailEvent.objects.filter(transaction=txn).values_list("rule_name", flat=True))
     assert rule_names == {
         "confidence_floor", "max_retry_attempts", "spend_ceiling",
