@@ -217,9 +217,10 @@ Postgres, Redis) — push to a repo connected to Render and it spins up as one u
 Setting services up manually instead (three services pointed at the same repo,
 Root Directory `backend`) works too — see the Start/Build commands in `render.yaml`.
 Either way, set `DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`/`RAZORPAY_KEY_ID`/
-`RAZORPAY_KEY_SECRET`/`SECRET_KEY` as env vars, and run `seed_dashboard_user` once
-against the deployed database (Render's is separate from your local one) before the
-login screen will accept anything.
+`RAZORPAY_KEY_SECRET`/`SECRET_KEY` as env vars. The web service's `startCommand` runs
+`seed_dashboard_user` on every boot (non-fatal if `DASHBOARD_PASSWORD` isn't set yet),
+so the login stays in sync with these two vars automatically — no manual Shell-tab step
+needed once both are set and the service has redeployed.
 
 **Frontend (Vercel or Netlify), separately** — it's never deployed alongside the
 backend:

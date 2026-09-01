@@ -25,3 +25,6 @@ Thumbs.db
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/*.log
+
+# Local-only reference doc, not part of the tracked repo
+HOW_IT_WORKS.md

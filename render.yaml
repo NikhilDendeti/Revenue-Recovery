@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: starter
     buildCommand: "pip install -r backend/requirements.txt"
-    startCommand: "cd backend && python manage.py migrate --noinput && daphne -b 0.0.0.0 -p $PORT config.asgi:application"
+    startCommand: "cd backend && python manage.py migrate --noinput && (python manage.py seed_dashboard_user || true) && daphne -b 0.0.0.0 -p $PORT config.asgi:application"
     envVars: &shared-env
       - key: DEBUG
         value: "False"
@@ -31,7 +31,9 @@ services:
       - key: DASHBOARD_USERNAME
         sync: false
       - key: DASHBOARD_PASSWORD
-        sync: false # required — run `python manage.py seed_dashboard_user` once after setting this
+        sync: false # required — the web service's startCommand runs seed_dashboard_user on every
+        # boot (non-fatal if unset), so the login stays in sync with these two vars automatically;
+        # no manual Shell-tab step needed once both are set here
 
   - type: worker
     name: recoverai-worker
