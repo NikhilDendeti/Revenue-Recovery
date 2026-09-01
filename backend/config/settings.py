@@ -14,6 +14,9 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 _render_hostname = env("RENDER_EXTERNAL_HOSTNAME", default="")
 if _render_hostname and _render_hostname not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_render_hostname)
+_railway_hostname = env("RAILWAY_PUBLIC_DOMAIN", default="")
+if _railway_hostname and _railway_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_railway_hostname)
 
 INSTALLED_APPS = [
     "django.contrib.admin",

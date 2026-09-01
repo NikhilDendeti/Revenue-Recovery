@@ -52,7 +52,11 @@ SQLITE_DROP_DELETE_SQL = "DROP TRIGGER IF EXISTS audit_log_append_only_delete;"
 def create_trigger(apps, schema_editor):
     vendor = schema_editor.connection.vendor
     if vendor == "postgresql":
-        schema_editor.execute(POSTGRES_CREATE_SQL)
+        # params=None (not the default ()) tells Django to skip psycopg's parameter
+        # substitution entirely — required because the PL/pgSQL RAISE EXCEPTION below
+        # has its own literal '%' placeholder, which psycopg would otherwise try to
+        # interpret as its own DB-API placeholder and fail on.
+        schema_editor.execute(POSTGRES_CREATE_SQL, params=None)
     elif vendor == "sqlite":
         # sqlite3's cursor.execute() only accepts one statement per call.
         schema_editor.execute(SQLITE_CREATE_UPDATE_SQL)
