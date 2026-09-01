@@ -76,7 +76,13 @@ export default function Dashboard({ onLogout }) {
         setTransactions(data.results ?? data);
         setTxError(null);
       })
-      .catch(() => setTxError("The backend didn't return the transaction list. It may be unreachable."))
+      .catch(() =>
+        setTxError(
+          import.meta.env.DEV
+            ? "The backend didn't return the transaction list. It may be unreachable."
+            : "Couldn't load the transaction list."
+        )
+      )
       .finally(() => setTxLoading(false));
   }, []);
 
@@ -112,7 +118,12 @@ export default function Dashboard({ onLogout }) {
         `${seeded} new transactions seeded — recovery events will land in the ticker as each one is worked.`
       );
     } catch {
-      toast.error("Couldn't trigger the replay", "The backend rejected the request or is unreachable.");
+      toast.error(
+        "Couldn't trigger the replay",
+        import.meta.env.DEV
+          ? "The backend rejected the request or is unreachable."
+          : "Please try again in a moment."
+      );
       setReplaying(false);
       return;
     }
@@ -123,7 +134,14 @@ export default function Dashboard({ onLogout }) {
     api
       .voiceShowcase(id)
       .then(() => toast.success("Voice recovery queued", "The Hinglish call will appear as soon as it completes."))
-      .catch(() => toast.error("Couldn't queue the voice recovery", "The backend rejected the request or is unreachable."));
+      .catch(() =>
+        toast.error(
+          "Couldn't queue the voice recovery",
+          import.meta.env.DEV
+            ? "The backend rejected the request or is unreachable."
+            : "Please try again in a moment."
+        )
+      );
   };
 
   const clearFilters = () => {
@@ -236,7 +254,11 @@ export default function Dashboard({ onLogout }) {
                     <EmptyState
                       icon="inbox"
                       title="No transactions detected yet"
-                      description="Seed the demo dataset on the backend, then trigger a batch replay to watch the agent work through it."
+                      description={
+                        import.meta.env.DEV
+                          ? "Seed the demo dataset on the backend, then trigger a batch replay to watch the agent work through it."
+                          : "New transactions will appear here as soon as the agent detects revenue at risk."
+                      }
                     />
                   )}
                 </div>
