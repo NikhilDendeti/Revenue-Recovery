@@ -26,5 +26,6 @@ Thumbs.db
 .claude/scheduled_tasks.lock
 .claude/*.log
 
-# Local-only reference doc, not part of the tracked repo
+# Local-only reference docs, not part of the tracked repo
 HOW_IT_WORKS.md
+DEMO_SCRIPT.md

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .analytics import compute_summary
+from .seed_data_helpers import seed_all
 from .models import (
     Action as ActionModel,
     AuditLogEntry,
@@ -112,13 +113,21 @@ class SummaryView(APIView):
 
 
 class BatchReplayView(APIView):
-    """POST triggers a live, staggered replay of every OPEN transaction — the demo's
-    'don't pre-run it' moment. Idempotent: transactions already past OPEN are skipped
-    inside process_transaction_event, so calling this twice mid-flight is harmless."""
+    """POST seeds a fresh batch of synthetic transactions across all four flows, then
+    triggers a live, staggered replay of every OPEN transaction (the newly-seeded ones,
+    plus any still-open stragglers from an earlier, unfinished trigger) — the demo's
+    'don't pre-run it' moment, repeatable on every click rather than a one-shot per
+    deployment. Never resets or reprocesses a transaction from a prior batch: each call
+    only adds new rows, so a transaction's guardrail history (contact cooldowns, retry
+    counts) is never revisited by a later trigger."""
 
     def post(self, request):
+        seeded = seed_all()
         result = replay_batch.delay()
-        return Response({"queued": True, "task_id": result.id}, status=status.HTTP_202_ACCEPTED)
+        return Response(
+            {"queued": True, "task_id": result.id, "seeded": len(seeded)},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class WebhookView(APIView):

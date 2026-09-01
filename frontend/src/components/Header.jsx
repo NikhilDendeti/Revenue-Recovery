@@ -190,7 +190,7 @@ export default function Header({ connected, replaying, onReplay, onLogout, query
           <span className="sm:hidden">
             <IconButton
               icon="play"
-              label={replaying ? "Batch replay in progress" : "Trigger batch replay"}
+              label={replaying ? "Seeding & replaying…" : "Trigger batch replay"}
               size="sm"
               variant="primary"
               loading={replaying}

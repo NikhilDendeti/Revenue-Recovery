@@ -106,8 +106,11 @@ export default function Dashboard({ onLogout }) {
   const handleReplay = async () => {
     setReplaying(true);
     try {
-      await api.replayBatch();
-      toast.success("Batch replay queued", "Recovery events will land in the ticker as each transaction is worked.");
+      const { seeded } = await api.replayBatch();
+      toast.success(
+        "Batch replay queued",
+        `${seeded} new transactions seeded — recovery events will land in the ticker as each one is worked.`
+      );
     } catch {
       toast.error("Couldn't trigger the replay", "The backend rejected the request or is unreachable.");
       setReplaying(false);

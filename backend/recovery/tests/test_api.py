@@ -4,7 +4,7 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from recovery.models import AuditLogEntry, Decision, Diagnosis, GuardrailEvent, PromiseToPay, Transaction
+from recovery.models import Action, AuditLogEntry, Decision, Diagnosis, GuardrailEvent, PromiseToPay, Transaction
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("no_razorpay_keys")]
 
@@ -154,6 +154,64 @@ def test_batch_replay_trigger_is_accepted(client, make_transaction):
     resp = client.post("/api/batch/replay/", {}, format="json")
     assert resp.status_code == 202
     assert resp.json()["queued"] is True
+
+
+def test_batch_replay_seeds_fresh_transactions_from_empty(client):
+    assert Transaction.objects.count() == 0
+    resp = client.post("/api/batch/replay/", {}, format="json")
+    assert resp.status_code == 202
+    seeded = resp.json()["seeded"]
+    assert seeded > 0
+    assert Transaction.objects.filter(status=Transaction.Status.OPEN).count() == seeded
+
+
+def test_batch_replay_seeds_again_after_prior_batch_fully_resolved(client, make_transaction):
+    resolved_statuses = [
+        Transaction.Status.RECOVERED,
+        Transaction.Status.ESCALATED,
+        Transaction.Status.HELD,
+        Transaction.Status.FAILED,
+    ]
+    for s in resolved_statuses:
+        txn = make_transaction(failure_code="insufficient_funds")
+        txn.status = s
+        txn.save(update_fields=["status"])
+
+    assert Transaction.objects.filter(status=Transaction.Status.OPEN).count() == 0
+
+    resp = client.post("/api/batch/replay/", {}, format="json")
+
+    assert resp.status_code == 202
+    seeded = resp.json()["seeded"]
+    assert seeded > 0
+    assert Transaction.objects.filter(status=Transaction.Status.OPEN).count() == seeded
+
+
+def test_batch_replay_leaves_a_prior_resolved_transaction_untouched(client, make_transaction):
+    resolved = make_transaction(failure_code="card_declined", customer_id="cust_prior_batch")
+    resolved.status = Transaction.Status.ESCALATED
+    resolved.save(update_fields=["status"])
+    Action.objects.create(transaction=resolved, action_type="escalate", result="pending")
+    GuardrailEvent.objects.create(transaction=resolved, rule_name="spend_ceiling", rule_result="blocked", detail="over ceiling")
+
+    client.post("/api/batch/replay/", {}, format="json")
+
+    resolved.refresh_from_db()
+    assert resolved.status == Transaction.Status.ESCALATED
+    assert Action.objects.filter(transaction=resolved).count() == 1
+    assert GuardrailEvent.objects.filter(transaction=resolved).count() == 1
+
+
+def test_batch_replay_includes_a_still_open_straggler_from_an_earlier_trigger(client, make_transaction):
+    straggler = make_transaction(failure_code="insufficient_funds", customer_id="cust_straggler")
+    assert straggler.status == Transaction.Status.OPEN
+
+    resp = client.post("/api/batch/replay/", {}, format="json")
+
+    assert resp.status_code == 202
+    open_ids = set(Transaction.objects.filter(status=Transaction.Status.OPEN).values_list("id", flat=True))
+    assert straggler.id in open_ids
+    assert Transaction.objects.filter(id=straggler.id).count() == 1
 
 
 def test_webhook_payment_failed_creates_transaction(client):

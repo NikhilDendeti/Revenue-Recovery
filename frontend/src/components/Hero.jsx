@@ -89,7 +89,7 @@ export default function Hero({ summary, connected, replaying, onReplay }) {
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button size="lg" icon={replaying ? undefined : "play"} loading={replaying} onClick={onReplay}>
-              {replaying ? "Replaying batch…" : "Trigger batch replay"}
+              {replaying ? "Seeding & replaying…" : "Trigger batch replay"}
             </Button>
             <Button size="lg" variant="secondary" icon="list" onClick={() => scrollToSection("audit")}>
               Open audit trail
