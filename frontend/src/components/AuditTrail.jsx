@@ -68,7 +68,11 @@ export default function AuditTrail({
       <EmptyState
         icon="inbox"
         title="No transactions yet"
-        description="Seed the demo dataset on the backend, then trigger a batch replay to watch the agent work."
+        description={
+          import.meta.env.DEV
+            ? "Seed the demo dataset on the backend, then trigger a batch replay to watch the agent work."
+            : "Trigger a batch replay to watch the agent work."
+        }
       />
     );
   } else {

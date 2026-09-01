@@ -152,13 +152,15 @@ export default function Login({ onSuccess }) {
                   {loading ? "Signing in…" : "Sign in"}
                 </Button>
 
-                <p className="mt-5 text-center text-[0.75rem] leading-relaxed text-fg-subtle">
-                  No account? Run{" "}
-                  <code className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-subtle">
-                    python manage.py seed_dashboard_user
-                  </code>{" "}
-                  on the backend.
-                </p>
+                {import.meta.env.DEV && (
+                  <p className="mt-5 text-center text-[0.75rem] leading-relaxed text-fg-subtle">
+                    No account? Run{" "}
+                    <code className="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[0.6875rem] text-fg-subtle">
+                      python manage.py seed_dashboard_user
+                    </code>{" "}
+                    on the backend.
+                  </p>
+                )}
               </form>
             </div>
           </div>

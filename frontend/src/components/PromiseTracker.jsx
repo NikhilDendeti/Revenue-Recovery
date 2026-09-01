@@ -42,7 +42,13 @@ export default function PromiseTracker() {
         setPromises(data.results ?? data);
         setError(null);
       })
-      .catch(() => setError("The promise-to-pay list couldn't be loaded. The backend may be unreachable."))
+      .catch(() =>
+        setError(
+          import.meta.env.DEV
+            ? "The promise-to-pay list couldn't be loaded. The backend may be unreachable."
+            : "The promise-to-pay list couldn't be loaded.",
+        ),
+      )
       .finally(() => setLoading(false));
   }, []);
 

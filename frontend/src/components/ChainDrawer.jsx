@@ -351,7 +351,13 @@ export default function ChainDrawer({ transactionId, onClose, onVoiceShowcase })
     api
       .transactionChain(transactionId)
       .then(setChain)
-      .catch(() => setError("The reasoning chain couldn't be loaded. The backend may be unreachable."))
+      .catch(() =>
+        setError(
+          import.meta.env.DEV
+            ? "The reasoning chain couldn't be loaded. The backend may be unreachable."
+            : "The reasoning chain couldn't be loaded."
+        )
+      )
       .finally(() => setLoading(false));
   }, [transactionId]);
 

@@ -33,9 +33,11 @@ export default class ErrorBoundary extends Component {
             Something in the dashboard failed to render. Your data is untouched — the audit log is append-only and
             nothing here writes to it.
           </p>
-          <p className="mt-4 rounded-lg border border-hairline bg-surface-2 px-3.5 py-2.5 text-left font-mono text-[0.75rem] break-words text-fg-subtle">
-            {String(this.state.error?.message || this.state.error)}
-          </p>
+          {import.meta.env.DEV && (
+            <p className="mt-4 rounded-lg border border-hairline bg-surface-2 px-3.5 py-2.5 text-left font-mono text-[0.75rem] break-words text-fg-subtle">
+              {String(this.state.error?.message || this.state.error)}
+            </p>
+          )}
           <Button size="lg" icon="refresh" className="mt-7" onClick={() => window.location.reload()}>
             Reload the dashboard
           </Button>
